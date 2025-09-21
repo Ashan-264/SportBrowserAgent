@@ -4,7 +4,7 @@ import { closeStagehandSession } from "../main";
 export async function POST(request: NextRequest) {
   try {
     const { sessionId } = await request.json();
-    
+
     if (!sessionId) {
       return NextResponse.json(
         { success: false, message: "Session ID is required" },

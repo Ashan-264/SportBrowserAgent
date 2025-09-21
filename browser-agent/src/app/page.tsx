@@ -12,6 +12,9 @@ import {
   MessageCircle,
   Play,
   Bot,
+  Mic,
+  MicOff,
+  Volume2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { input } from "framer-motion/client";
@@ -43,6 +46,101 @@ export default function BrowserAgentUI() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   // Add this state variable with your existing useState declarations
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+
+  // Speech mode state
+  const [speechMode, setSpeechMode] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
+    null
+  );
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Speech functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (event) => {
+        chunks.push(event.data);
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: "audio/wav" });
+        await transcribeAudio(audioBlob);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setAudioChunks(chunks);
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Error starting recording:", error);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder) {
+      mediaRecorder.stop();
+      setIsRecording(false);
+      setMediaRecorder(null);
+    }
+  };
+
+  const transcribeAudio = async (audioBlob: Blob) => {
+    try {
+      const formData = new FormData();
+      formData.append("audio", audioBlob, "recording.wav");
+
+      const response = await fetch("/api/speech/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setInputMessage(data.transcript);
+      } else {
+        console.error("Transcription failed:", data.error);
+      }
+    } catch (error) {
+      console.error("Error transcribing audio:", error);
+    }
+  };
+
+  const synthesizeAndPlaySpeech = async (text: string) => {
+    if (!speechMode) return;
+
+    try {
+      setIsPlaying(true);
+      const response = await fetch("/api/speech/synthesize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      const data = await response.json();
+      if (data.success && audioRef.current) {
+        const audioBlob = new Blob([Buffer.from(data.audio, "base64")], {
+          type: data.mimeType,
+        });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audioRef.current.src = audioUrl;
+        audioRef.current.onended = () => {
+          setIsPlaying(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+        await audioRef.current.play();
+      }
+    } catch (error) {
+      console.error("Error synthesizing speech:", error);
+      setIsPlaying(false);
+    }
+  };
 
   // Add this function before the return statement
   const closeSession = async () => {
@@ -131,6 +229,11 @@ export default function BrowserAgentUI() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Synthesize speech for assistant response if speech mode is enabled
+      if (speechMode && assistantMessage.content) {
+        await synthesizeAndPlaySpeech(assistantMessage.content);
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       const errorMessage: Message = {
@@ -189,6 +292,11 @@ export default function BrowserAgentUI() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Synthesize speech for assistant response if speech mode is enabled
+      if (speechMode && resultContent) {
+        await synthesizeAndPlaySpeech(resultContent);
+      }
     } catch (error) {
       console.error("Error running Stagehand:", error);
       const errorMessage: Message = {
@@ -262,6 +370,11 @@ export default function BrowserAgentUI() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Synthesize speech for assistant response if speech mode is enabled
+      if (speechMode && resultContent) {
+        await synthesizeAndPlaySpeech(resultContent);
+      }
     } catch (error) {
       console.error("Error running agent:", error);
       const errorMessage: Message = {
@@ -315,6 +428,19 @@ export default function BrowserAgentUI() {
                 {conversationMode ? "Conversation" : "Automation"}
               </h2>
               <div className="flex gap-2">
+                <Button
+                  onClick={() => setSpeechMode(!speechMode)}
+                  variant="outline"
+                  size="sm"
+                  className={`border-purple-600 text-xs ${
+                    speechMode
+                      ? "bg-purple-600 text-white hover:bg-purple-700"
+                      : "text-purple-400 hover:bg-purple-900"
+                  }`}
+                >
+                  <Volume2 className="mr-1 h-3 w-3" />
+                  {speechMode ? "Speech On" : "Speech Off"}
+                </Button>
                 <Button
                   onClick={toggleConversationMode}
                   variant="outline"
@@ -401,6 +527,23 @@ export default function BrowserAgentUI() {
                   className="flex-1 bg-black/40 border border-blue-800 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-400"
                   disabled={isLoading || isExecuting || isAgentRunning}
                 />
+                {speechMode && (
+                  <Button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isLoading || isExecuting || isAgentRunning}
+                    className={`px-4 ${
+                      isRecording
+                        ? "bg-red-600 hover:bg-red-700 animate-pulse"
+                        : "bg-purple-600 hover:bg-purple-700"
+                    }`}
+                  >
+                    {isRecording ? (
+                      <MicOff className="h-4 w-4" />
+                    ) : (
+                      <Mic className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
                 <Button
                   onClick={sendMessage}
                   disabled={
@@ -426,6 +569,9 @@ export default function BrowserAgentUI() {
                   🗑️ Close Browser Session
                 </Button>
               </div>
+
+              {/* Hidden audio element for speech playback */}
+              <audio ref={audioRef} style={{ display: "none" }} />
 
               <div className="flex gap-1">
                 <Button

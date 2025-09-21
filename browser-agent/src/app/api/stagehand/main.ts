@@ -14,13 +14,16 @@ const genAI = new GoogleGenerativeAI(process.env.Gemini_API_KEY!);
 /**
  * Get action decision from Gemini
  */
-async function getActionFromGemini(userCommand: string, currentUrl?: string): Promise<{
-  command: 'extract' | 'act' | 'observe' | 'goto';
+async function getActionFromGemini(
+  userCommand: string,
+  currentUrl?: string
+): Promise<{
+  command: "extract" | "act" | "observe" | "goto";
   url?: string;
   instruction: string;
 }> {
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-  
+
   const prompt = `
 You are a web automation assistant. Based on the user's request, decide what action to take.
 
@@ -50,17 +53,17 @@ For "get all the trail names": {"command": "extract", "instruction": "extract al
   try {
     const result = await model.generateContent(prompt);
     const response = result.response.text().trim();
-    
+
     // Remove any markdown formatting
-    const cleanResponse = response.replace(/```json\n?|\n?```/g, '').trim();
-    
+    const cleanResponse = response.replace(/```json\n?|\n?```/g, "").trim();
+
     return JSON.parse(cleanResponse);
   } catch (error) {
     console.error("Error parsing Gemini response:", error);
     // Fallback to observe
     return {
-      command: 'observe',
-      instruction: 'Analyze the current page'
+      command: "observe",
+      instruction: "Analyze the current page",
     };
   }
 }
@@ -73,50 +76,50 @@ async function executeStagehandAction(
   action: { command: string; url?: string; instruction: string }
 ) {
   const { page } = stagehand;
-  
+
   try {
     switch (action.command) {
-      case 'goto':
-        if (!action.url) throw new Error('URL required for goto command');
+      case "goto":
+        if (!action.url) throw new Error("URL required for goto command");
         await page.goto(action.url);
         return {
           success: true,
-          action: 'goto',
+          action: "goto",
           result: `Navigated to ${action.url}`,
-          data: { url: action.url }
+          data: { url: action.url },
         };
 
-      case 'observe':
+      case "observe":
         const observeResult = await page.observe({
-          instruction: action.instruction
+          instruction: action.instruction,
         });
         return {
           success: true,
-          action: 'observe',
+          action: "observe",
           result: `Observed: ${action.instruction}`,
-          data: observeResult
+          data: observeResult,
         };
 
-      case 'act':
+      case "act":
         const actResult = await page.act({
-          instruction: action.instruction
+          instruction: action.instruction,
         });
         return {
           success: true,
-          action: 'act',
+          action: "act",
           result: `Action performed: ${action.instruction}`,
-          data: actResult
+          data: actResult,
         };
 
-      case 'extract':
+      case "extract":
         const extractResult = await page.extract({
-          instruction: action.instruction
+          instruction: action.instruction,
         });
         return {
           success: true,
-          action: 'extract',
+          action: "extract",
           result: `Extracted: ${action.instruction}`,
-          data: extractResult
+          data: extractResult,
         };
 
       default:
@@ -128,7 +131,7 @@ async function executeStagehandAction(
       success: false,
       action: action.command,
       result: `Failed to execute ${action.command}: ${error.message}`,
-      data: { error: error.message }
+      data: { error: error.message },
     };
   }
 }
@@ -138,7 +141,7 @@ async function executeStagehandAction(
  */
 async function main(stagehand: Stagehand, userCommand: string) {
   const { page } = stagehand;
-  
+
   try {
     // Get current URL if page is loaded
     let currentUrl;
@@ -150,25 +153,24 @@ async function main(stagehand: Stagehand, userCommand: string) {
 
     // Get action decision from Gemini
     const actionDecision = await getActionFromGemini(userCommand, currentUrl);
-    console.log('Gemini decided action:', actionDecision);
+    console.log("Gemini decided action:", actionDecision);
 
     // Execute the decided action
     const result = await executeStagehandAction(stagehand, actionDecision);
-    
+
     return {
       success: result.success,
       message: result.result,
       action: actionDecision,
       data: result.data,
-      currentUrl: currentUrl
+      currentUrl: currentUrl,
     };
-
   } catch (error) {
     console.error("Error in main:", error);
     return {
       success: false,
       message: `Error processing command: ${error.message}`,
-      data: { error: error.message }
+      data: { error: error.message },
     };
   }
 }
@@ -194,7 +196,11 @@ export async function closeStagehandSession(sessionId: string) {
 /**
  * Initialize and run the main() function
  */
-export async function runStagehand(command: string, sessionId?: string, closeSession = false) {
+export async function runStagehand(
+  command: string,
+  sessionId?: string,
+  closeSession = false
+) {
   const stagehand = new Stagehand({
     env: "BROWSERBASE",
     apiKey: process.env.BROWSERBASE_API_KEY,
@@ -212,7 +218,7 @@ export async function runStagehand(command: string, sessionId?: string, closeSes
   try {
     await stagehand.init();
     const result = await main(stagehand, command);
-    
+
     console.log("Stagehand action completed successfully!");
     if (closeSession) {
       await stagehand.close();
@@ -230,7 +236,7 @@ export async function runStagehand(command: string, sessionId?: string, closeSes
     return {
       success: false,
       message: `Failed to execute command: ${error.message}`,
-      data: { error: error.message }
+      data: { error: error.message },
     };
   }
 }

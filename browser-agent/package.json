@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^2.5.0",
+    "@deepgram/sdk": "^4.11.2",
     "@google/generative-ai": "^0.24.1",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-slot": "^1.2.3",
