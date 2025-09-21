@@ -19,7 +19,7 @@ import {
   FileText,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import jsPDF from 'jspdf';
+import jsPDF from "jspdf";
 
 interface Message {
   role: "user" | "assistant";
@@ -27,12 +27,20 @@ interface Message {
   timestamp: Date;
 }
 
+interface ExtractedDataItem {
+  id: string;
+  content: string;
+  type: string;
+  timestamp: Date;
+  source?: string;
+}
+
 export default function BrowserAgentUI() {
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string[]>([
     "System initialized - Ready for automation",
     "Speech mode available - Click to enable",
-    "Export features loaded - CSV and PDF ready"
+    "Export features loaded - CSV and PDF ready",
   ]);
   const [showBrowser, setShowBrowser] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -53,6 +61,12 @@ export default function BrowserAgentUI() {
   // Add this state variable with your existing useState declarations
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
+  // Persistent session and data management
+  const [extractedData, setExtractedData] = useState<ExtractedDataItem[]>([]);
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [sessionActive, setSessionActive] = useState(false);
+  const [lastAction, setLastAction] = useState<string | null>(null);
+
   // Speech mode state
   const [speechMode, setSpeechMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -63,18 +77,55 @@ export default function BrowserAgentUI() {
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // Data management functions
+  const addExtractedData = (content: string, type: string, source?: string) => {
+    const newItem: ExtractedDataItem = {
+      id: Date.now().toString(),
+      content,
+      type,
+      timestamp: new Date(),
+      source: source || currentUrl || "unknown",
+    };
+    setExtractedData((prev) => [...prev, newItem]);
+    addLog(`New data extracted: ${type}`);
+  };
+
+  const sortExtractedData = (sortBy: "timestamp" | "type" | "content") => {
+    setExtractedData((prev) => {
+      const sorted = [...prev].sort((a, b) => {
+        switch (sortBy) {
+          case "timestamp":
+            return b.timestamp.getTime() - a.timestamp.getTime();
+          case "type":
+            return a.type.localeCompare(b.type);
+          case "content":
+            return a.content.localeCompare(b.content);
+          default:
+            return 0;
+        }
+      });
+      addLog(`Data sorted by: ${sortBy}`);
+      return sorted;
+    });
+  };
+
+  const clearExtractedData = () => {
+    setExtractedData([]);
+    addLog("Extracted data cleared");
+  };
+
   // Logging utility functions
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [...prev, `[${timestamp}] ${message}`]);
+    setLogs((prev) => [...prev, `[${timestamp}] ${message}`]);
   };
 
   const addStagehandLog = (action: string, details?: string) => {
     const timestamp = new Date().toLocaleTimeString();
-    const logMessage = details 
+    const logMessage = details
       ? `[${timestamp}] Stagehand: ${action} - ${details}`
       : `[${timestamp}] Stagehand: ${action}`;
-    setLogs(prev => [...prev, logMessage]);
+    setLogs((prev) => [...prev, logMessage]);
   };
 
   // Speech functions
@@ -178,43 +229,43 @@ export default function BrowserAgentUI() {
   // Export utility functions
   const exportChatAsCSV = () => {
     const csvContent = [
-      ['Timestamp', 'Role', 'Content'],
-      ...messages.map(msg => [
+      ["Timestamp", "Role", "Content"],
+      ...messages.map((msg) => [
         msg.timestamp.toISOString(),
         msg.role,
-        msg.content.replace(/\n/g, ' ').replace(/"/g, '""')
-      ])
+        msg.content.replace(/\n/g, " ").replace(/"/g, '""'),
+      ]),
     ];
-    
-    const csvString = csvContent.map(row => 
-      row.map(field => `"${field}"`).join(',')
-    ).join('\n');
-    
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+
+    const csvString = csvContent
+      .map((row) => row.map((field) => `"${field}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `chat-export-${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `chat-export-${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
   };
 
   const exportLogsAsCSV = () => {
     const csvContent = [
-      ['Index', 'Log Entry'],
+      ["Index", "Log Entry"],
       ...logs.map((log, index) => [
         (index + 1).toString(),
-        log.replace(/\n/g, ' ').replace(/"/g, '""')
-      ])
+        log.replace(/\n/g, " ").replace(/"/g, '""'),
+      ]),
     ];
-    
-    const csvString = csvContent.map(row => 
-      row.map(field => `"${field}"`).join(',')
-    ).join('\n');
-    
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+
+    const csvString = csvContent
+      .map((row) => row.map((field) => `"${field}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `logs-export-${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `logs-export-${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
   };
@@ -224,40 +275,43 @@ export default function BrowserAgentUI() {
     const pageWidth = pdf.internal.pageSize.width;
     const margin = 20;
     let yPosition = margin;
-    
+
     // Add title
     pdf.setFontSize(16);
-    pdf.text('Chat Export', margin, yPosition);
+    pdf.text("Chat Export", margin, yPosition);
     yPosition += 10;
-    
+
     // Add export date
     pdf.setFontSize(10);
     pdf.text(`Exported on: ${new Date().toLocaleString()}`, margin, yPosition);
     yPosition += 15;
-    
+
     // Add messages
     pdf.setFontSize(12);
-    
+
     messages.forEach((message) => {
       const timeStr = message.timestamp.toLocaleString();
-      const roleStr = message.role === 'user' ? 'You' : 'Agent';
+      const roleStr = message.role === "user" ? "You" : "Agent";
       const headerStr = `[${timeStr}] ${roleStr}:`;
-      
+
       // Check if we need a new page
       if (yPosition > pdf.internal.pageSize.height - 40) {
         pdf.addPage();
         yPosition = margin;
       }
-      
+
       // Add message header
-      pdf.setFont('helvetica', 'bold');
+      pdf.setFont("helvetica", "bold");
       pdf.text(headerStr, margin, yPosition);
       yPosition += 7;
-      
+
       // Add message content
-      pdf.setFont('helvetica', 'normal');
-      const lines = pdf.splitTextToSize(message.content, pageWidth - 2 * margin);
-      
+      pdf.setFont("helvetica", "normal");
+      const lines = pdf.splitTextToSize(
+        message.content,
+        pageWidth - 2 * margin
+      );
+
       lines.forEach((line: string) => {
         if (yPosition > pdf.internal.pageSize.height - 20) {
           pdf.addPage();
@@ -266,11 +320,11 @@ export default function BrowserAgentUI() {
         pdf.text(line, margin, yPosition);
         yPosition += 5;
       });
-      
+
       yPosition += 5; // Space between messages
     });
-    
-    pdf.save(`chat-export-${new Date().toISOString().split('T')[0]}.pdf`);
+
+    pdf.save(`chat-export-${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   const exportLogsAsPDF = async () => {
@@ -278,31 +332,31 @@ export default function BrowserAgentUI() {
     const pageWidth = pdf.internal.pageSize.width;
     const margin = 20;
     let yPosition = margin;
-    
+
     // Add title
     pdf.setFontSize(16);
-    pdf.text('Logs Export', margin, yPosition);
+    pdf.text("Logs Export", margin, yPosition);
     yPosition += 10;
-    
+
     // Add export date
     pdf.setFontSize(10);
     pdf.text(`Exported on: ${new Date().toLocaleString()}`, margin, yPosition);
     yPosition += 15;
-    
+
     // Add logs
     pdf.setFontSize(12);
-    
+
     logs.forEach((log, index) => {
       // Check if we need a new page
       if (yPosition > pdf.internal.pageSize.height - 30) {
         pdf.addPage();
         yPosition = margin;
       }
-      
+
       // Add log entry
       const logStr = `${index + 1}. ${log}`;
       const lines = pdf.splitTextToSize(logStr, pageWidth - 2 * margin);
-      
+
       lines.forEach((line: string) => {
         if (yPosition > pdf.internal.pageSize.height - 20) {
           pdf.addPage();
@@ -311,14 +365,14 @@ export default function BrowserAgentUI() {
         pdf.text(line, margin, yPosition);
         yPosition += 6;
       });
-      
+
       yPosition += 3; // Space between log entries
     });
-    
-    pdf.save(`logs-export-${new Date().toISOString().split('T')[0]}.pdf`);
+
+    pdf.save(`logs-export-${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
-    // Add this function before the return statement
+  // Add this function before the return statement
   const closeSession = async () => {
     if (!currentSessionId) return;
 
@@ -332,6 +386,9 @@ export default function BrowserAgentUI() {
       const data = await response.json();
       if (data.success) {
         setCurrentSessionId(null);
+        setSessionActive(false);
+        setCurrentUrl(null);
+        setLastAction(null);
         addStagehandLog("Browser session closed successfully");
         setMessages((prev) => [
           ...prev,
@@ -448,11 +505,22 @@ export default function BrowserAgentUI() {
     setIsExecuting(true);
 
     try {
-      // 1. start browser session so iframe shows
-      addStagehandLog("Initializing browser session");
-      const { sessionId, debugUrl } = await startBBSSession();
-      setDebugUrl(debugUrl);
-      addStagehandLog("Browser session started", `Session ID: ${sessionId}`);
+      let sessionId = currentSessionId;
+      let debugUrl = null;
+
+      // Only create new session if none exists
+      if (!sessionId || !sessionActive) {
+        addStagehandLog("Initializing new browser session");
+        const session = await startBBSSession();
+        sessionId = session.sessionId;
+        debugUrl = session.debugUrl;
+        setCurrentSessionId(sessionId);
+        setDebugUrl(debugUrl);
+        setSessionActive(true);
+        addStagehandLog("Browser session started", `Session ID: ${sessionId}`);
+      } else {
+        addStagehandLog("Using existing browser session", sessionId);
+      }
 
       addStagehandLog("Sending command to Gemini for action decision");
       const response = await fetch("/api/stagehand", {
@@ -461,19 +529,44 @@ export default function BrowserAgentUI() {
         body: JSON.stringify({
           command: originalCommand,
           sessionId: sessionId,
+          persistSession: true,
         }),
       });
 
       const data = await response.json();
-      
+
       if (data.action) {
-        addStagehandLog(`Action decided: ${data.action.command}`, data.action.instruction);
+        addStagehandLog(
+          `Action decided: ${data.action.command}`,
+          data.action.instruction
+        );
+        setLastAction(data.action.command);
+
+        // Update current URL if it's a goto action
+        if (data.action.command === "goto" && data.action.url) {
+          setCurrentUrl(data.action.url);
+          addLog(`Navigated to: ${data.action.url}`);
+        }
       }
 
       let resultContent = "";
       if (data.success) {
         resultContent = data.result;
         addStagehandLog("Command executed successfully");
+
+        // If this was an extraction, store the data
+        if (data.action?.command === "extract" && data.data?.extraction) {
+          addExtractedData(
+            data.data.extraction,
+            "extraction",
+            currentUrl || "current page"
+          );
+        }
+
+        // Update current URL from response if available
+        if (data.currentUrl) {
+          setCurrentUrl(data.currentUrl);
+        }
       } else {
         resultContent = `❌ **Stagehand Demo Failed**\n\nError: ${data.error}`;
         addStagehandLog("Command failed", data.error);
@@ -551,7 +644,7 @@ export default function BrowserAgentUI() {
           resultContent += `**Logs:**\n${data.logs
             .map((log: string) => `• ${log}`)
             .join("\n")}\n\n`;
-          
+
           // Add agent logs to our log system
           data.logs.forEach((log: string) => {
             addStagehandLog("Agent step", log);
@@ -565,7 +658,7 @@ export default function BrowserAgentUI() {
             2
           )}\n\`\`\``;
         }
-        
+
         addStagehandLog("Agent execution completed successfully");
       } else {
         resultContent = `❌ **Agent Failed**\n\nError: ${data.error}`;
@@ -636,12 +729,44 @@ export default function BrowserAgentUI() {
       <div className="w-1/3 border-r border-blue-800 flex flex-col min-h-0">
         <Card className="bg-black/40 border-blue-800 h-full rounded-none flex flex-col min-h-0">
           <CardContent className="p-4 h-full flex flex-col min-h-0">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold flex items-center gap-2">
-                <MessageSquare className="text-blue-400" />
-                {conversationMode ? "Conversation" : "Automation"}
-              </h2>
-              <div className="flex gap-2">
+            {/* Header Section */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <MessageSquare className="text-blue-400" />
+                  {conversationMode ? "Conversation" : "Automation"}
+                  {sessionActive && (
+                    <span className="text-xs bg-green-600 px-2 py-1 rounded-full">
+                      Session Active
+                    </span>
+                  )}
+                </h2>
+                <Button
+                  onClick={clearChat}
+                  variant="outline"
+                  size="sm"
+                  className="border-red-600 text-red-400 hover:bg-red-900"
+                >
+                  Clear Chat
+                </Button>
+              </div>
+
+              {/* Control Bar */}
+              <div className="flex gap-2 mb-3">
+                <Button
+                  onClick={toggleConversationMode}
+                  variant="outline"
+                  size="sm"
+                  className={`border-blue-600 text-xs ${
+                    conversationMode
+                      ? "bg-blue-600 text-white hover:bg-blue-700"
+                      : "text-blue-400 hover:bg-blue-900"
+                  }`}
+                >
+                  <MessageCircle className="mr-1 h-3 w-3" />
+                  {conversationMode ? "Chat Mode" : "Auto Mode"}
+                </Button>
+
                 <Button
                   onClick={() => setSpeechMode(!speechMode)}
                   variant="outline"
@@ -655,25 +780,13 @@ export default function BrowserAgentUI() {
                   <Volume2 className="mr-1 h-3 w-3" />
                   {speechMode ? "Speech On" : "Speech Off"}
                 </Button>
-                <Button
-                  onClick={toggleConversationMode}
-                  variant="outline"
-                  size="sm"
-                  className={`border-blue-600 text-xs ${
-                    conversationMode
-                      ? "bg-blue-600 text-white hover:bg-blue-700"
-                      : "text-blue-400 hover:bg-blue-900"
-                  }`}
-                >
-                  <MessageCircle className="mr-1 h-3 w-3" />
-                  {conversationMode ? "Chat" : "Auto"}
-                </Button>
-                <div className="flex gap-1">
+
+                <div className="flex border border-gray-600 rounded-md overflow-hidden">
                   <Button
                     onClick={exportChatAsCSV}
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="border-green-600 text-green-400 hover:bg-green-900 text-xs"
+                    className="border-0 rounded-none text-green-400 hover:bg-green-900/50 text-xs"
                     title="Export Chat as CSV"
                   >
                     <Download className="mr-1 h-3 w-3" />
@@ -681,25 +794,108 @@ export default function BrowserAgentUI() {
                   </Button>
                   <Button
                     onClick={exportChatAsPDF}
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="border-green-600 text-green-400 hover:bg-green-900 text-xs"
+                    className="border-0 rounded-none border-l border-gray-600 text-green-400 hover:bg-green-900/50 text-xs"
                     title="Export Chat as PDF"
                   >
                     <FileText className="mr-1 h-3 w-3" />
                     PDF
                   </Button>
                 </div>
-                <Button
-                  onClick={clearChat}
-                  variant="outline"
-                  size="sm"
-                  className="border-red-600 text-red-400 hover:bg-red-900"
-                >
-                  Clear
-                </Button>
               </div>
             </div>
+
+            {/* Session Status Panel */}
+            {sessionActive && (
+              <div className="mb-4 p-3 bg-gradient-to-r from-gray-900/50 to-gray-800/50 border border-gray-700 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-green-400">
+                      🌐 Active Browser Session
+                    </h3>
+                    {extractedData.length > 0 && (
+                      <span className="text-xs bg-blue-600 px-2 py-1 rounded-full">
+                        {extractedData.length} items
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    onClick={closeSession}
+                    variant="outline"
+                    size="sm"
+                    className="border-red-600 text-red-400 hover:bg-red-900 text-xs"
+                  >
+                    🗑️ Close Session
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-xs text-gray-300 mb-3">
+                  <div>
+                    <p className="text-gray-400">Current URL:</p>
+                    <p className="text-blue-300 truncate">
+                      {currentUrl ? new URL(currentUrl).hostname : "Not set"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">Last Action:</p>
+                    <p className="text-green-300">{lastAction || "None"}</p>
+                  </div>
+                </div>
+
+                {/* Data Management Controls */}
+                {extractedData.length > 0 && (
+                  <div className="border-t border-gray-600 pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-blue-300 font-medium">
+                        Extracted Data Management:
+                      </span>
+                      <div className="flex gap-1">
+                        <Button
+                          onClick={() => sortExtractedData("timestamp")}
+                          variant="outline"
+                          size="sm"
+                          className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 text-xs px-2 py-1"
+                          title="Sort by Time"
+                        >
+                          Time
+                        </Button>
+                        <Button
+                          onClick={() => sortExtractedData("type")}
+                          variant="outline"
+                          size="sm"
+                          className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 text-xs px-2 py-1"
+                          title="Sort by Type"
+                        >
+                          Type
+                        </Button>
+                        <Button
+                          onClick={clearExtractedData}
+                          variant="outline"
+                          size="sm"
+                          className="border-red-600 text-red-400 hover:bg-red-900/50 text-xs px-2 py-1"
+                          title="Clear Data"
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="max-h-16 overflow-y-auto bg-black/30 rounded p-2">
+                      {extractedData.slice(-3).map((item) => (
+                        <p
+                          key={item.id}
+                          className="text-xs text-gray-400 truncate mb-1"
+                        >
+                          <span className="text-blue-400">{item.type}:</span>{" "}
+                          {item.content.substring(0, 60)}...
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <ScrollArea
               ref={scrollAreaRef}
@@ -749,8 +945,10 @@ export default function BrowserAgentUI() {
               </div>
             </ScrollArea>
 
-            <div className="mt-4 space-y-2">
-              <div className="flex gap-1">
+            {/* Input Section */}
+            <div className="space-y-3">
+              {/* Main Input Row */}
+              <div className="flex gap-2">
                 <input
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
@@ -758,16 +956,19 @@ export default function BrowserAgentUI() {
                   placeholder={
                     conversationMode
                       ? "Ask me anything..."
+                      : sessionActive && currentUrl
+                      ? `Continue working on ${new URL(currentUrl).hostname}...`
                       : "Describe the web action you want to automate..."
                   }
-                  className="flex-1 bg-black/40 border border-blue-800 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-400"
+                  className="flex-1 bg-black/40 border border-blue-800 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-400"
                   disabled={isLoading || isExecuting || isAgentRunning}
                 />
+
                 {speechMode && (
                   <Button
                     onClick={isRecording ? stopRecording : startRecording}
                     disabled={isLoading || isExecuting || isAgentRunning}
-                    className={`px-4 ${
+                    className={`px-4 py-3 ${
                       isRecording
                         ? "bg-red-600 hover:bg-red-700 animate-pulse"
                         : "bg-purple-600 hover:bg-purple-700"
@@ -780,6 +981,7 @@ export default function BrowserAgentUI() {
                     )}
                   </Button>
                 )}
+
                 <Button
                   onClick={sendMessage}
                   disabled={
@@ -788,28 +990,18 @@ export default function BrowserAgentUI() {
                     isExecuting ||
                     isAgentRunning
                   }
-                  className="bg-blue-600 hover:bg-blue-700 px-4"
+                  className="bg-blue-600 hover:bg-blue-700 px-6 py-3"
                 >
                   {isLoading ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                   ) : (
-                    "📤"
+                    "Send"
                   )}
-                </Button>
-                {/* Add this button in your JSX after the existing buttons */}
-
-                <Button
-                  onClick={closeSession}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                >
-                  🗑️ Close Browser Session
                 </Button>
               </div>
 
-              {/* Hidden audio element for speech playback */}
-              <audio ref={audioRef} style={{ display: "none" }} />
-
-              <div className="flex gap-1">
+              {/* Action Buttons Row */}
+              <div className="grid grid-cols-2 gap-2">
                 <Button
                   onClick={executeCommand}
                   disabled={
@@ -818,14 +1010,14 @@ export default function BrowserAgentUI() {
                     isLoading ||
                     isAgentRunning
                   }
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-sm"
+                  className="bg-green-600 hover:bg-green-700 text-sm py-3"
                 >
                   {isExecuting ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   ) : (
                     <Play className="mr-2 h-4 w-4" />
                   )}
-                  🤘 Run Stagehand Demo
+                  {sessionActive ? "Continue Action" : "🤘 Run Stagehand"}
                 </Button>
 
                 <Button
@@ -836,17 +1028,68 @@ export default function BrowserAgentUI() {
                     isLoading ||
                     isExecuting
                   }
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-sm"
+                  className="bg-purple-600 hover:bg-purple-700 text-sm py-3"
                 >
                   {isAgentRunning ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   ) : (
                     <Bot className="mr-2 h-4 w-4" />
                   )}
-                  Run Agent Mode
+                  Agent Execution
                 </Button>
               </div>
+
+              {/* Quick Actions for Active Sessions */}
+              {sessionActive && currentUrl && (
+                <div className="bg-gray-900/30 border border-gray-700 rounded-lg p-3">
+                  <p className="text-xs text-gray-400 mb-2 font-medium">
+                    Quick Actions for {new URL(currentUrl).hostname}:
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button
+                      onClick={() => {
+                        setInputMessage(
+                          "extract all text content from this page"
+                        );
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
+                      disabled={isExecuting || isAgentRunning || isLoading}
+                    >
+                      Extract Text
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setInputMessage("extract all links from this page");
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
+                      disabled={isExecuting || isAgentRunning || isLoading}
+                    >
+                      Extract Links
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setInputMessage(
+                          "observe what actions can be performed on this page"
+                        );
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
+                      disabled={isExecuting || isAgentRunning || isLoading}
+                    >
+                      Observe
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Hidden audio element for speech playback */}
+            <audio ref={audioRef} style={{ display: "none" }} />
           </CardContent>
         </Card>
 
@@ -854,45 +1097,58 @@ export default function BrowserAgentUI() {
         {showLogs && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "200px", opacity: 1 }}
+            animate={{ height: "240px", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="bg-black/60 border-t border-blue-800 overflow-hidden"
           >
-            <div className="flex justify-between items-center p-2 border-b border-blue-700">
-              <h3 className="text-sm font-semibold text-blue-300">System Logs</h3>
-              <div className="flex gap-1">
+            <div className="flex justify-between items-center p-3 border-b border-blue-700 bg-gray-900/50">
+              <h3 className="text-sm font-semibold text-blue-300 flex items-center gap-2">
+                <List className="h-4 w-4" />
+                System Logs
+                <span className="text-xs bg-blue-600 px-2 py-1 rounded-full">
+                  {logs.length}
+                </span>
+              </h3>
+              <div className="flex border border-gray-600 rounded-md overflow-hidden">
                 <Button
                   onClick={exportLogsAsCSV}
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="border-green-600 text-green-400 hover:bg-green-900 text-xs"
+                  className="border-0 rounded-none text-green-400 hover:bg-green-900/50 text-xs"
                   title="Export Logs as CSV"
                 >
-                  <Download className="mr-1 h-2 w-2" />
+                  <Download className="mr-1 h-3 w-3" />
                   CSV
                 </Button>
                 <Button
                   onClick={exportLogsAsPDF}
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="border-green-600 text-green-400 hover:bg-green-900 text-xs"
+                  className="border-0 rounded-none border-l border-gray-600 text-green-400 hover:bg-green-900/50 text-xs"
                   title="Export Logs as PDF"
                 >
-                  <FileText className="mr-1 h-2 w-2" />
+                  <FileText className="mr-1 h-3 w-3" />
                   PDF
                 </Button>
               </div>
             </div>
-            <ScrollArea className="h-full p-3 text-sm text-blue-200">
-              {logs.length > 0 ? (
-                logs.map((log, index) => (
-                  <p key={index} className="mb-1 font-mono text-xs">
-                    {log}
-                  </p>
-                ))
-              ) : (
-                <p className="text-gray-400 italic">No logs yet...</p>
-              )}
+            <ScrollArea className="h-full p-3">
+              <div className="space-y-1">
+                {logs.length > 0 ? (
+                  logs.map((log, index) => (
+                    <div
+                      key={index}
+                      className="p-2 bg-gray-900/30 rounded text-xs font-mono text-blue-200 border-l-2 border-blue-500/30"
+                    >
+                      {log}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-gray-400 italic py-8">
+                    No logs yet...
+                  </div>
+                )}
+              </div>
             </ScrollArea>
           </motion.div>
         )}
@@ -900,37 +1156,48 @@ export default function BrowserAgentUI() {
 
       {/* Browser Live View Section */}
       <div className="flex-1 flex flex-col">
-        <div className="flex gap-2 p-4 bg-black/40 border-b border-blue-800">
-          <Button
-            variant="outline"
-            className="border-blue-600 text-blue-400 hover:bg-blue-900"
-            onClick={() => setShowBrowser(!showBrowser)}
-          >
-            <PanelRight className="mr-2 h-4 w-4" /> Toggle Browser View
-          </Button>
-          <Button
-            variant="outline"
-            className="border-blue-600 text-blue-400 hover:bg-blue-900"
-            onClick={() => setShowLogs(!showLogs)}
-          >
-            <List className="mr-2 h-4 w-4" /> Toggle Logs
-          </Button>
+        {/* Browser Controls */}
+        <div className="flex justify-between items-center p-4 bg-black/40 border-b border-blue-800">
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="border-blue-600 text-blue-400 hover:bg-blue-900"
+              onClick={() => setShowBrowser(!showBrowser)}
+            >
+              <PanelRight className="mr-2 h-4 w-4" />
+              {showBrowser ? "Hide" : "Show"} Browser
+            </Button>
+            <Button
+              variant="outline"
+              className="border-blue-600 text-blue-400 hover:bg-blue-900"
+              onClick={() => setShowLogs(!showLogs)}
+            >
+              <List className="mr-2 h-4 w-4" />
+              {showLogs ? "Hide" : "Show"} Logs
+            </Button>
+          </div>
+
+          {debugUrl && (
+            <div className="text-xs text-gray-400">
+              <span>Debug Session Active</span>
+            </div>
+          )}
         </div>
 
+        {/* Browser Content */}
         {showBrowser ? (
-          // <motion.div
-          //   initial={{ opacity: 0 }}
-          //   animate={{ opacity: 1 }}
-          //   className="flex-1 bg-black/80 flex items-center justify-center text-blue-300"
-          // >
-          //   <p>🔵 Browser Live View Placeholder</p>
-
-          // </motion.div>
-
-          <StagehandEmbed debugUrl={debugUrl} />
+          <div className="flex-1 bg-black/20">
+            <StagehandEmbed debugUrl={debugUrl} />
+          </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-600">
-            <p>Enable Browser View to see content</p>
+          <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-900/50 to-gray-800/50 text-gray-500">
+            <div className="text-center">
+              <PanelRight className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p className="text-lg font-medium">Browser View Disabled</p>
+              <p className="text-sm">
+                Click &quot;Show Browser&quot; to view automation
+              </p>
+            </div>
           </div>
         )}
       </div>

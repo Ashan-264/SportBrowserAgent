@@ -3,7 +3,7 @@ import { runStagehand, startBBSSession } from "./main";
 
 export async function POST(request: NextRequest) {
   try {
-    const { command, sessionId } = await request.json();
+    const { command, sessionId, persistSession = false } = await request.json();
 
     if (!command) {
       return NextResponse.json(
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       finalSessionId = session.sessionId;
     }
 
-    const result = await runStagehand(command, finalSessionId);
+    const result = await runStagehand(command, finalSessionId, !persistSession);
 
     // Format the result for display in chat
     let formattedResult = `🤖 **Stagehand Action Complete**\n\n`;
@@ -28,24 +28,47 @@ export async function POST(request: NextRequest) {
     formattedResult += `**Result:** ${result.message}\n\n`;
 
     if (result.data && typeof result.data === "object") {
-      if (result.action?.command === "extract" && result.data.extraction) {
+      if (result.action?.command === "extract" && "extraction" in result.data) {
         formattedResult += `**Extracted Data:**\n${result.data.extraction}\n\n`;
-      } else if (result.action?.command === "observe" && result.data.elements) {
+      } else if (
+        result.action?.command === "observe" &&
+        Array.isArray(result.data)
+      ) {
         formattedResult += `**Available Actions:**\n`;
-        result.data.elements.forEach((element: any, index: number) => {
-          formattedResult += `${index + 1}. ${element.description}\n`;
+        result.data.forEach((element: unknown, index: number) => {
+          const description =
+            typeof element === "object" &&
+            element !== null &&
+            "description" in element
+              ? (element as { description: string }).description
+              : String(element);
+          formattedResult += `${index + 1}. ${description}\n`;
         });
         formattedResult += `\n`;
+      } else if (result.action?.command === "goto" && "url" in result.data) {
+        formattedResult += `**Navigation:** Successfully navigated to ${result.data.url}\n\n`;
+      } else if (result.action?.command === "act" && result.data) {
+        formattedResult += `**Action Result:** ${JSON.stringify(
+          result.data,
+          null,
+          2
+        )}\n\n`;
       }
     }
 
+    if (persistSession) {
+      formattedResult += `*Session Active - Ready for follow-up actions*\n`;
+    }
     formattedResult += `*Session ID: ${finalSessionId}*`;
 
     return NextResponse.json({
       success: result.success,
       result: formattedResult,
       sessionId: finalSessionId,
-      data: result,
+      action: result.action,
+      data: result.data,
+      currentUrl: result.currentUrl,
+      persistSession: persistSession,
     });
   } catch (error) {
     console.error("Error in stagehand route:", error);
