@@ -80,6 +80,7 @@ export default function BrowserAgentUI() {
   // Speech functions
   const startRecording = async () => {
     try {
+      addLog("Starting microphone recording");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
@@ -90,6 +91,7 @@ export default function BrowserAgentUI() {
 
       recorder.onstop = async () => {
         const audioBlob = new Blob(chunks, { type: "audio/wav" });
+        addLog("Recording stopped, sending for transcription");
         await transcribeAudio(audioBlob);
         stream.getTracks().forEach((track) => track.stop());
       };
@@ -98,8 +100,10 @@ export default function BrowserAgentUI() {
       setMediaRecorder(recorder);
       setAudioChunks(chunks);
       setIsRecording(true);
+      addLog("Recording started");
     } catch (error) {
       console.error("Error starting recording:", error);
+      addLog(`Recording error: ${error}`);
     }
   };
 
@@ -108,11 +112,13 @@ export default function BrowserAgentUI() {
       mediaRecorder.stop();
       setIsRecording(false);
       setMediaRecorder(null);
+      addLog("Recording stopped by user");
     }
   };
 
   const transcribeAudio = async (audioBlob: Blob) => {
     try {
+      addLog("Sending audio to Deepgram for transcription");
       const formData = new FormData();
       formData.append("audio", audioBlob, "recording.wav");
 
@@ -124,11 +130,14 @@ export default function BrowserAgentUI() {
       const data = await response.json();
       if (data.success) {
         setInputMessage(data.transcript);
+        addLog(`Transcription successful: "${data.transcript}"`);
       } else {
         console.error("Transcription failed:", data.error);
+        addLog(`Transcription failed: ${data.error}`);
       }
     } catch (error) {
       console.error("Error transcribing audio:", error);
+      addLog(`Transcription error: ${error}`);
     }
   };
 
@@ -137,6 +146,7 @@ export default function BrowserAgentUI() {
 
     try {
       setIsPlaying(true);
+      addLog("Synthesizing speech with Deepgram");
       const response = await fetch("/api/speech/synthesize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -153,12 +163,15 @@ export default function BrowserAgentUI() {
         audioRef.current.onended = () => {
           setIsPlaying(false);
           URL.revokeObjectURL(audioUrl);
+          addLog("Speech playback completed");
         };
         await audioRef.current.play();
+        addLog("Playing synthesized speech");
       }
     } catch (error) {
       console.error("Error synthesizing speech:", error);
       setIsPlaying(false);
+      addLog(`Speech synthesis error: ${error}`);
     }
   };
 
@@ -225,7 +238,7 @@ export default function BrowserAgentUI() {
     // Add messages
     pdf.setFontSize(12);
     
-    messages.forEach((message, index) => {
+    messages.forEach((message) => {
       const timeStr = message.timestamp.toLocaleString();
       const roleStr = message.role === 'user' ? 'You' : 'Agent';
       const headerStr = `[${timeStr}] ${roleStr}:`;
@@ -237,15 +250,15 @@ export default function BrowserAgentUI() {
       }
       
       // Add message header
-      pdf.setFont(undefined, 'bold');
+      pdf.setFont('helvetica', 'bold');
       pdf.text(headerStr, margin, yPosition);
       yPosition += 7;
       
       // Add message content
-      pdf.setFont(undefined, 'normal');
+      pdf.setFont('helvetica', 'normal');
       const lines = pdf.splitTextToSize(message.content, pageWidth - 2 * margin);
       
-      lines.forEach(line => {
+      lines.forEach((line: string) => {
         if (yPosition > pdf.internal.pageSize.height - 20) {
           pdf.addPage();
           yPosition = margin;
@@ -290,7 +303,7 @@ export default function BrowserAgentUI() {
       const logStr = `${index + 1}. ${log}`;
       const lines = pdf.splitTextToSize(logStr, pageWidth - 2 * margin);
       
-      lines.forEach(line => {
+      lines.forEach((line: string) => {
         if (yPosition > pdf.internal.pageSize.height - 20) {
           pdf.addPage();
           yPosition = margin;
@@ -305,11 +318,12 @@ export default function BrowserAgentUI() {
     pdf.save(`logs-export-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  // Add this function before the return statement
+    // Add this function before the return statement
   const closeSession = async () => {
     if (!currentSessionId) return;
 
     try {
+      addStagehandLog("Closing browser session", currentSessionId);
       const response = await fetch("/api/stagehand/close", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -318,6 +332,7 @@ export default function BrowserAgentUI() {
       const data = await response.json();
       if (data.success) {
         setCurrentSessionId(null);
+        addStagehandLog("Browser session closed successfully");
         setMessages((prev) => [
           ...prev,
           {
@@ -328,6 +343,7 @@ export default function BrowserAgentUI() {
         ]);
       }
     } catch (error: Error | unknown) {
+      addStagehandLog("Error closing session", String(error));
       setMessages((prev) => [
         ...prev,
         {
@@ -339,29 +355,10 @@ export default function BrowserAgentUI() {
     }
   };
 
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      if (scrollAreaRef.current) {
-        const scrollContainer = scrollAreaRef.current.querySelector(
-          "[data-radix-scroll-area-viewport]"
-        );
-        if (scrollContainer) {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight;
-        }
-      }
-    }, 100);
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [isLoading]);
-
   const sendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
+
+    addLog("Sending message to Gemini");
 
     const userMessage: Message = {
       role: "user",
@@ -392,6 +389,7 @@ export default function BrowserAgentUI() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      addLog("Received response from Gemini");
 
       // Synthesize speech for assistant response if speech mode is enabled
       if (speechMode && assistantMessage.content) {
@@ -399,6 +397,7 @@ export default function BrowserAgentUI() {
       }
     } catch (error) {
       console.error("Error sending message:", error);
+      addLog(`Chat error: ${error}`);
       const errorMessage: Message = {
         role: "assistant",
         content: "Sorry, there was an error processing your request.",
@@ -410,10 +409,32 @@ export default function BrowserAgentUI() {
     }
   };
 
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      if (scrollAreaRef.current) {
+        const scrollContainer = scrollAreaRef.current.querySelector(
+          "[data-radix-scroll-area-viewport]"
+        );
+        if (scrollContainer) {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }
+      }
+    }, 100);
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [isLoading]);
+
   const executeCommand = async () => {
     if (!inputMessage.trim() || isExecuting) return;
 
     setIsExecuting(true);
+    addStagehandLog("Starting browser automation", inputMessage);
 
     const userMessage: Message = {
       role: "user",
@@ -422,30 +443,40 @@ export default function BrowserAgentUI() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const originalCommand = inputMessage;
     setInputMessage("");
     setIsExecuting(true);
 
     try {
       // 1. start browser session so iframe shows
+      addStagehandLog("Initializing browser session");
       const { sessionId, debugUrl } = await startBBSSession();
       setDebugUrl(debugUrl);
+      addStagehandLog("Browser session started", `Session ID: ${sessionId}`);
 
+      addStagehandLog("Sending command to Gemini for action decision");
       const response = await fetch("/api/stagehand", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          command: inputMessage,
+          command: originalCommand,
           sessionId: sessionId,
         }),
       });
 
       const data = await response.json();
+      
+      if (data.action) {
+        addStagehandLog(`Action decided: ${data.action.command}`, data.action.instruction);
+      }
 
       let resultContent = "";
       if (data.success) {
         resultContent = data.result;
+        addStagehandLog("Command executed successfully");
       } else {
         resultContent = `❌ **Stagehand Demo Failed**\n\nError: ${data.error}`;
+        addStagehandLog("Command failed", data.error);
       }
 
       const assistantMessage: Message = {
@@ -462,6 +493,7 @@ export default function BrowserAgentUI() {
       }
     } catch (error) {
       console.error("Error running Stagehand:", error);
+      addStagehandLog("Error occurred", String(error));
       const errorMessage: Message = {
         role: "assistant",
         content:
@@ -471,11 +503,14 @@ export default function BrowserAgentUI() {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsExecuting(false);
+      addStagehandLog("Browser automation completed");
     }
   };
 
   const runAgent = async () => {
     if (!inputMessage.trim() || isAgentRunning) return;
+
+    addStagehandLog("Starting agent mode", inputMessage);
 
     const userMessage: Message = {
       role: "user",
@@ -489,9 +524,12 @@ export default function BrowserAgentUI() {
     setIsAgentRunning(true);
 
     try {
+      addStagehandLog("Initializing agent browser session");
       const { sessionId, debugUrl } = await startBBSSession();
       setDebugUrl(debugUrl);
+      addStagehandLog("Agent session started", `Session ID: ${sessionId}`);
 
+      addStagehandLog("Running agent automation", command);
       const response = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -513,6 +551,11 @@ export default function BrowserAgentUI() {
           resultContent += `**Logs:**\n${data.logs
             .map((log: string) => `• ${log}`)
             .join("\n")}\n\n`;
+          
+          // Add agent logs to our log system
+          data.logs.forEach((log: string) => {
+            addStagehandLog("Agent step", log);
+          });
         }
 
         if (data.result) {
@@ -522,8 +565,11 @@ export default function BrowserAgentUI() {
             2
           )}\n\`\`\``;
         }
+        
+        addStagehandLog("Agent execution completed successfully");
       } else {
         resultContent = `❌ **Agent Failed**\n\nError: ${data.error}`;
+        addStagehandLog("Agent execution failed", data.error);
       }
 
       const assistantMessage: Message = {
@@ -540,6 +586,7 @@ export default function BrowserAgentUI() {
       }
     } catch (error) {
       console.error("Error running agent:", error);
+      addStagehandLog("Agent error occurred", String(error));
       const errorMessage: Message = {
         role: "assistant",
         content: "❌ **Agent Error**\n\nFailed to run agent mode.",
@@ -548,10 +595,12 @@ export default function BrowserAgentUI() {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsAgentRunning(false);
+      addStagehandLog("Agent mode completed");
     }
   };
 
   const clearChat = () => {
+    addLog("Chat history cleared");
     const initialMessage = conversationMode
       ? "Hello! I'm ready to chat and answer your questions."
       : "Ready to automate web tasks! I generate automation steps by default.";
@@ -563,6 +612,8 @@ export default function BrowserAgentUI() {
 
   const toggleConversationMode = () => {
     setConversationMode(!conversationMode);
+    const newMode = !conversationMode ? "conversation" : "automation";
+    addLog(`Switched to ${newMode} mode`);
     const newMessage = !conversationMode
       ? "Hello! I'm ready to chat and answer your questions."
       : "Ready to automate web tasks! I generate automation steps by default.";
@@ -833,12 +884,15 @@ export default function BrowserAgentUI() {
               </div>
             </div>
             <ScrollArea className="h-full p-3 text-sm text-blue-200">
-              <p>[Log] Browser navigated to https://example.com</p>
-              <p>[Log] Clicked button #submit</p>
-              <p>[Log] Extracted text from #headline</p>
-              {logs.map((log, index) => (
-                <p key={index}>[Log] {log}</p>
-              ))}
+              {logs.length > 0 ? (
+                logs.map((log, index) => (
+                  <p key={index} className="mb-1 font-mono text-xs">
+                    {log}
+                  </p>
+                ))
+              ) : (
+                <p className="text-gray-400 italic">No logs yet...</p>
+              )}
             </ScrollArea>
           </motion.div>
         )}
