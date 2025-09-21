@@ -15,9 +15,11 @@ import {
   Mic,
   MicOff,
   Volume2,
+  Download,
+  FileText,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { input } from "framer-motion/client";
+import jsPDF from 'jspdf';
 
 interface Message {
   role: "user" | "assistant";
@@ -27,7 +29,11 @@ interface Message {
 
 export default function BrowserAgentUI() {
   const [showLogs, setShowLogs] = useState(false);
-  const [logs] = useState<string[]>([]);
+  const [logs, setLogs] = useState<string[]>([
+    "System initialized - Ready for automation",
+    "Speech mode available - Click to enable",
+    "Export features loaded - CSV and PDF ready"
+  ]);
   const [showBrowser, setShowBrowser] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -56,6 +62,20 @@ export default function BrowserAgentUI() {
   );
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Logging utility functions
+  const addLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev, `[${timestamp}] ${message}`]);
+  };
+
+  const addStagehandLog = (action: string, details?: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logMessage = details 
+      ? `[${timestamp}] Stagehand: ${action} - ${details}`
+      : `[${timestamp}] Stagehand: ${action}`;
+    setLogs(prev => [...prev, logMessage]);
+  };
 
   // Speech functions
   const startRecording = async () => {
@@ -140,6 +160,149 @@ export default function BrowserAgentUI() {
       console.error("Error synthesizing speech:", error);
       setIsPlaying(false);
     }
+  };
+
+  // Export utility functions
+  const exportChatAsCSV = () => {
+    const csvContent = [
+      ['Timestamp', 'Role', 'Content'],
+      ...messages.map(msg => [
+        msg.timestamp.toISOString(),
+        msg.role,
+        msg.content.replace(/\n/g, ' ').replace(/"/g, '""')
+      ])
+    ];
+    
+    const csvString = csvContent.map(row => 
+      row.map(field => `"${field}"`).join(',')
+    ).join('\n');
+    
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `chat-export-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const exportLogsAsCSV = () => {
+    const csvContent = [
+      ['Index', 'Log Entry'],
+      ...logs.map((log, index) => [
+        (index + 1).toString(),
+        log.replace(/\n/g, ' ').replace(/"/g, '""')
+      ])
+    ];
+    
+    const csvString = csvContent.map(row => 
+      row.map(field => `"${field}"`).join(',')
+    ).join('\n');
+    
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `logs-export-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const exportChatAsPDF = async () => {
+    const pdf = new jsPDF();
+    const pageWidth = pdf.internal.pageSize.width;
+    const margin = 20;
+    let yPosition = margin;
+    
+    // Add title
+    pdf.setFontSize(16);
+    pdf.text('Chat Export', margin, yPosition);
+    yPosition += 10;
+    
+    // Add export date
+    pdf.setFontSize(10);
+    pdf.text(`Exported on: ${new Date().toLocaleString()}`, margin, yPosition);
+    yPosition += 15;
+    
+    // Add messages
+    pdf.setFontSize(12);
+    
+    messages.forEach((message, index) => {
+      const timeStr = message.timestamp.toLocaleString();
+      const roleStr = message.role === 'user' ? 'You' : 'Agent';
+      const headerStr = `[${timeStr}] ${roleStr}:`;
+      
+      // Check if we need a new page
+      if (yPosition > pdf.internal.pageSize.height - 40) {
+        pdf.addPage();
+        yPosition = margin;
+      }
+      
+      // Add message header
+      pdf.setFont(undefined, 'bold');
+      pdf.text(headerStr, margin, yPosition);
+      yPosition += 7;
+      
+      // Add message content
+      pdf.setFont(undefined, 'normal');
+      const lines = pdf.splitTextToSize(message.content, pageWidth - 2 * margin);
+      
+      lines.forEach(line => {
+        if (yPosition > pdf.internal.pageSize.height - 20) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+        pdf.text(line, margin, yPosition);
+        yPosition += 5;
+      });
+      
+      yPosition += 5; // Space between messages
+    });
+    
+    pdf.save(`chat-export-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const exportLogsAsPDF = async () => {
+    const pdf = new jsPDF();
+    const pageWidth = pdf.internal.pageSize.width;
+    const margin = 20;
+    let yPosition = margin;
+    
+    // Add title
+    pdf.setFontSize(16);
+    pdf.text('Logs Export', margin, yPosition);
+    yPosition += 10;
+    
+    // Add export date
+    pdf.setFontSize(10);
+    pdf.text(`Exported on: ${new Date().toLocaleString()}`, margin, yPosition);
+    yPosition += 15;
+    
+    // Add logs
+    pdf.setFontSize(12);
+    
+    logs.forEach((log, index) => {
+      // Check if we need a new page
+      if (yPosition > pdf.internal.pageSize.height - 30) {
+        pdf.addPage();
+        yPosition = margin;
+      }
+      
+      // Add log entry
+      const logStr = `${index + 1}. ${log}`;
+      const lines = pdf.splitTextToSize(logStr, pageWidth - 2 * margin);
+      
+      lines.forEach(line => {
+        if (yPosition > pdf.internal.pageSize.height - 20) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+        pdf.text(line, margin, yPosition);
+        yPosition += 6;
+      });
+      
+      yPosition += 3; // Space between log entries
+    });
+    
+    pdf.save(`logs-export-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   // Add this function before the return statement
@@ -454,6 +617,28 @@ export default function BrowserAgentUI() {
                   <MessageCircle className="mr-1 h-3 w-3" />
                   {conversationMode ? "Chat" : "Auto"}
                 </Button>
+                <div className="flex gap-1">
+                  <Button
+                    onClick={exportChatAsCSV}
+                    variant="outline"
+                    size="sm"
+                    className="border-green-600 text-green-400 hover:bg-green-900 text-xs"
+                    title="Export Chat as CSV"
+                  >
+                    <Download className="mr-1 h-3 w-3" />
+                    CSV
+                  </Button>
+                  <Button
+                    onClick={exportChatAsPDF}
+                    variant="outline"
+                    size="sm"
+                    className="border-green-600 text-green-400 hover:bg-green-900 text-xs"
+                    title="Export Chat as PDF"
+                  >
+                    <FileText className="mr-1 h-3 w-3" />
+                    PDF
+                  </Button>
+                </div>
                 <Button
                   onClick={clearChat}
                   variant="outline"
@@ -622,6 +807,31 @@ export default function BrowserAgentUI() {
             exit={{ height: 0, opacity: 0 }}
             className="bg-black/60 border-t border-blue-800 overflow-hidden"
           >
+            <div className="flex justify-between items-center p-2 border-b border-blue-700">
+              <h3 className="text-sm font-semibold text-blue-300">System Logs</h3>
+              <div className="flex gap-1">
+                <Button
+                  onClick={exportLogsAsCSV}
+                  variant="outline"
+                  size="sm"
+                  className="border-green-600 text-green-400 hover:bg-green-900 text-xs"
+                  title="Export Logs as CSV"
+                >
+                  <Download className="mr-1 h-2 w-2" />
+                  CSV
+                </Button>
+                <Button
+                  onClick={exportLogsAsPDF}
+                  variant="outline"
+                  size="sm"
+                  className="border-green-600 text-green-400 hover:bg-green-900 text-xs"
+                  title="Export Logs as PDF"
+                >
+                  <FileText className="mr-1 h-2 w-2" />
+                  PDF
+                </Button>
+              </div>
+            </div>
             <ScrollArea className="h-full p-3 text-sm text-blue-200">
               <p>[Log] Browser navigated to https://example.com</p>
               <p>[Log] Clicked button #submit</p>
