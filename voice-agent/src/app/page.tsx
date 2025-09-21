@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { PanelRight, List, MessageSquare } from "lucide-react";
+import { motion } from "framer-motion";
 
 interface LogEntry {
   id: string;
@@ -36,7 +40,7 @@ interface LiveSession {
   projectId?: string;
 }
 
-export default function VoiceAgent() {
+export default function BrowserAgentUI() {
   const [isRecording, setIsRecording] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -48,7 +52,6 @@ export default function VoiceAgent() {
   const [showLiveViewer, setShowLiveViewer] = useState(false);
   const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
   const [showLiveSessions, setShowLiveSessions] = useState(false);
-  const [isPollingLiveSessions, setIsPollingLiveSessions] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -65,7 +68,6 @@ export default function VoiceAgent() {
   // Fetch live Browserbase sessions
   const fetchLiveSessions = useCallback(async () => {
     try {
-      setIsPollingLiveSessions(true);
       const response = await fetch("/api/browserbase");
       if (response.ok) {
         const data = await response.json();
@@ -73,8 +75,6 @@ export default function VoiceAgent() {
       }
     } catch (error) {
       console.error("Failed to fetch live sessions:", error);
-    } finally {
-      setIsPollingLiveSessions(false);
     }
   }, []);
 
@@ -211,15 +211,6 @@ export default function VoiceAgent() {
       setIsProcessing(true);
       addLog("transcript", null, "⏹️ Recording stopped, processing...");
     }
-  };
-
-  const handleTextSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!textInput.trim() || isProcessing) return;
-
-    const message = textInput.trim();
-    setTextInput("");
-    await processInput(message);
   };
 
   const processInput = async (input: Blob | string) => {
@@ -418,218 +409,120 @@ export default function VoiceAgent() {
     }
   };
 
-  const clearLogs = () => {
-    setLogs([]);
-  };
-
-  const clearChat = () => {
-    setChatMessages([]);
-  };
-
-  const getLogColor = (type: LogEntry["type"]) => {
-    switch (type) {
-      case "transcript":
-        return "text-blue-600 bg-blue-50";
-      case "intent":
-        return "text-purple-600 bg-purple-50";
-      case "firecrawl":
-        return "text-green-600 bg-green-50";
-      case "refine":
-        return "text-yellow-600 bg-yellow-50";
-      case "execute":
-        return "text-indigo-600 bg-indigo-50";
-      case "answer":
-        return "text-emerald-600 bg-emerald-50";
-      case "error":
-        return "text-red-600 bg-red-50";
-      default:
-        return "text-gray-600 bg-gray-50";
-    }
-  };
-
-  const getChatMessageStyle = (status?: ChatMessage["status"]) => {
-    switch (status) {
-      case "informational":
-        return "bg-blue-50 border-blue-200 text-blue-800";
-      case "action_confirmed":
-        return "bg-green-50 border-green-200 text-green-800";
-      case "error":
-        return "bg-red-50 border-red-200 text-red-800";
-      default:
-        return "bg-gray-50 border-gray-200 text-gray-800";
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b p-4">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            🎤 Voice Agent
-            <span className="text-sm font-normal text-gray-500">
-              Chat & Automate
-            </span>
-          </h1>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 max-w-4xl mx-auto w-full p-4 flex flex-col">
-        {/* Chat Area */}
-        <div className="flex-1 bg-white rounded-lg shadow-sm border mb-4 flex flex-col">
-          <div className="p-4 border-b flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Chat</h2>
-            <div className="flex gap-2">
-              {liveSessionUrl && (
-                <button
-                  onClick={() => setShowLiveViewer(!showLiveViewer)}
-                  className={`px-3 py-1 text-sm rounded transition-colors ${
-                    showLiveViewer
-                      ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  {showLiveViewer ? "Hide" : "Show"} Live Session
-                </button>
-              )}
-              <button
-                onClick={() => setShowLiveSessions(!showLiveSessions)}
-                className={`px-3 py-1 text-sm rounded transition-colors ${
-                  showLiveSessions
-                    ? "bg-purple-100 text-purple-700 hover:bg-purple-200"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                {showLiveSessions ? "Hide" : "Show"} Live Sessions (
-                {liveSessions.length})
-              </button>
-              <button
-                onClick={() => setShowBrowser(!showBrowser)}
-                className={`px-3 py-1 text-sm rounded transition-colors ${
-                  showBrowser
-                    ? "bg-green-100 text-green-700 hover:bg-green-200"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                {showBrowser ? "Hide" : "Show"} Browser
-              </button>
-              <button
-                onClick={() => setShowLogs(!showLogs)}
-                className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-              >
-                {showLogs ? "Hide" : "Show"} Logs ({logs.length})
-              </button>
-              <button
-                onClick={clearChat}
-                className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-              >
-                Clear Chat
-              </button>
-            </div>
-          </div>
-
-          {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[400px]">
-            {chatMessages.length === 0 ? (
-              <div className="text-center text-gray-500 py-8">
-                <div className="text-4xl mb-2">👋</div>
-                <p>
-                  Start a conversation! Ask me anything or give me a task to
-                  automate.
-                </p>
-                <p className="text-sm mt-2">
-                  Try: &quot;Search for weather in New York&quot; or &quot;Find
-                  the latest news&quot;
-                </p>
-              </div>
-            ) : (
-              chatMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.type === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg p-3 ${
-                      message.type === "user"
-                        ? "bg-blue-500 text-white"
-                        : `border ${getChatMessageStyle(message.status)}`
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {message.type === "agent" && (
-                        <span className="text-lg">🤖</span>
-                      )}
-                      {message.type === "user" && message.isVoice && (
-                        <span className="text-lg">🎤</span>
-                      )}
-                      <div className="flex-1">
-                        <p className="text-sm">{message.content}</p>
-                        <p className="text-xs opacity-70 mt-1">
-                          {message.timestamp}
-                        </p>
-                      </div>
-                    </div>
+    <div className="flex h-screen bg-gradient-to-br from-black via-gray-900 to-blue-950 text-white">
+      {/* Chatbox Section */}
+      <div className="w-1/3 border-r border-blue-800 flex flex-col">
+        <Card className="bg-black/40 border-blue-800 h-full rounded-none">
+          <CardContent className="p-4 h-full flex flex-col">
+            <h2 className="text-lg font-bold flex items-center gap-2 mb-4">
+              <MessageSquare className="text-blue-400" /> Chat
+            </h2>
+            <ScrollArea className="flex-1 rounded-md p-2 bg-black/30">
+              <div className="space-y-3 text-sm">
+                {chatMessages.length === 0 ? (
+                  <div className="text-center text-blue-300 py-8">
+                    <div className="text-4xl mb-2">👋</div>
+                    <p>
+                      Start a conversation! Ask me anything or give me a task to
+                      automate.
+                    </p>
+                    <p className="text-xs mt-2">
+                      Try: &quot;Search for weather in New York&quot; or
+                      &quot;Find the latest news&quot;
+                    </p>
                   </div>
-                </div>
-              ))
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Input Area */}
-          <div className="border-t p-4">
-            <form onSubmit={handleTextSubmit} className="flex gap-2">
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  value={textInput}
-                  onChange={(e) => setTextInput(e.target.value)}
-                  placeholder="Type your message or question..."
-                  disabled={isProcessing}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
-                />
+                ) : (
+                  chatMessages.map((message) => (
+                    <div key={message.id} className="mb-3">
+                      {message.type === "user" ? (
+                        <p className="text-blue-300">
+                          User: {message.content}
+                          {message.isVoice && <span className="ml-2">🎤</span>}
+                        </p>
+                      ) : (
+                        <p
+                          className={`text-gray-200 ${
+                            message.status === "error"
+                              ? "text-red-300"
+                              : message.status === "action_confirmed"
+                              ? "text-green-300"
+                              : "text-gray-200"
+                          }`}
+                        >
+                          Agent: {message.content}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        {message.timestamp}
+                      </p>
+                    </div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
               </div>
-
-              <button
-                type="submit"
+            </ScrollArea>
+            <div className="mt-4 flex">
+              <input
+                placeholder="Type your message..."
+                className="flex-1 bg-black/40 border border-blue-800 rounded-l-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-400"
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter" && !isProcessing && textInput.trim()) {
+                    e.preventDefault();
+                    const message = textInput.trim();
+                    setTextInput("");
+                    processInput(message);
+                  }
+                }}
+                disabled={isProcessing}
+              />
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 rounded-l-none"
+                onClick={() => {
+                  if (textInput.trim() && !isProcessing) {
+                    const message = textInput.trim();
+                    setTextInput("");
+                    processInput(message);
+                  }
+                }}
                 disabled={!textInput.trim() || isProcessing}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 Send
-              </button>
+              </Button>
+            </div>
 
-              <button
-                type="button"
+            {/* Voice Recording */}
+            <div className="mt-2 flex gap-2">
+              <Button
                 onClick={isRecording ? stopRecording : startRecording}
                 disabled={isProcessing && !isRecording}
-                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${
+                className={`flex-1 ${
                   isRecording
-                    ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                    ? "bg-red-500 hover:bg-red-600 animate-pulse"
                     : isProcessing
-                    ? "bg-gray-300 cursor-not-allowed text-gray-500"
-                    : "bg-green-500 hover:bg-green-600 text-white"
+                    ? "bg-gray-600 cursor-not-allowed"
+                    : "bg-green-600 hover:bg-green-700"
                 }`}
               >
                 {isRecording ? (
                   <>
-                    <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
-                    Stop
+                    <span className="w-2 h-2 bg-white rounded-full animate-pulse mr-2"></span>
+                    Stop Recording
                   </>
                 ) : isProcessing ? (
-                  "⏳"
+                  "Processing..."
                 ) : (
                   <>🎤 Voice</>
                 )}
-              </button>
-            </form>
+              </Button>
+            </div>
 
             {/* Audio Visualization */}
             {isRecording && (
               <div className="mt-3 flex items-center justify-center gap-1">
-                <span className="text-sm text-red-600 mr-2">Recording:</span>
+                <span className="text-sm text-red-400 mr-2">Recording:</span>
                 {Array.from({ length: 20 }).map((_, i) => (
                   <div
                     key={i}
@@ -646,297 +539,185 @@ export default function VoiceAgent() {
             )}
 
             {isProcessing && (
-              <div className="mt-2 text-center text-sm text-gray-600">
+              <div className="mt-2 text-center text-sm text-blue-300">
                 <span className="inline-flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
                   Processing your request...
                 </span>
               </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* Live Browser Session Viewer */}
-        {showLiveViewer && liveSessionUrl && (
-          <div className="bg-white rounded-lg shadow-sm border mb-4">
-            <div className="p-4 border-b flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-                🌐 Live Browser Session
-              </h2>
-              <div className="flex gap-2">
-                <a
-                  href={liveSessionUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
-                >
-                  Open in New Tab
-                </a>
-                <button
-                  onClick={() => setShowLiveViewer(false)}
-                  className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-                >
-                  Hide Viewer
-                </button>
-              </div>
-            </div>
-
-            <div className="relative" style={{ height: "500px" }}>
-              <iframe
-                src={liveSessionUrl} // Remove navbar=false to show the navbar
-                className="w-full h-full border-0 rounded-lg"
-                title="Live Browser Session"
-                sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-                allow="clipboard-read; clipboard-write; camera; microphone"
-                loading="lazy"
-                onLoad={() => {
-                  // Listen for disconnection messages from Browserbase
-                  const handleMessage = (event: MessageEvent) => {
-                    if (event.data === "browserbase-disconnected") {
-                      console.log("Browserbase session disconnected");
-                      // Could show a reconnection UI here
-                    }
-                  };
-                  window.addEventListener("message", handleMessage);
-                  return () =>
-                    window.removeEventListener("message", handleMessage);
-                }}
-              />
-              <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
-                🟢 LIVE
-              </div>
-              <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-                Browserbase Live View
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Live Sessions Display */}
-        {showLiveSessions && (
-          <div className="bg-white rounded-lg shadow-sm border">
-            <div className="p-4 border-b flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                🌐 Live Browserbase Sessions
-                <span className="text-sm text-gray-500">
-                  ({liveSessions.length} active)
-                </span>
-              </h3>
-              <button
-                onClick={() => setShowLiveSessions(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-4">
-              {liveSessions.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <div className="text-4xl mb-2">🏖️</div>
-                  <p>No active Browserbase sessions</p>
-                  <p className="text-sm mt-1">
-                    Start a query to create a new session
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {liveSessions.map((session, index) => (
-                    <div
-                      key={session.id || index}
-                      className="border rounded-lg p-4 bg-gray-50"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                          <span className="font-medium text-gray-800">
-                            Session {session.id || `#${index + 1}`}
-                          </span>
-                          {session.status && (
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full ${
-                                session.status === "RUNNING"
-                                  ? "bg-green-100 text-green-800"
-                                  : "bg-gray-100 text-gray-800"
-                              }`}
-                            >
-                              {session.status}
-                            </span>
-                          )}
-                        </div>
-
-                        {session.liveUrl && (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => {
-                                setLiveSessionUrl(session.liveUrl);
-                                setShowLiveViewer(true);
-                              }}
-                              className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                            >
-                              View Live
-                            </button>
-                            <a
-                              href={session.liveUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-3 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-                            >
-                              Open Tab
-                            </a>
-                          </div>
-                        )}
-                      </div>
-
-                      {session.createdAt && (
-                        <div className="text-sm text-gray-600 mb-2">
-                          Created:{" "}
-                          {new Date(session.createdAt).toLocaleString()}
-                        </div>
-                      )}
-
-                      {session.projectId && (
-                        <div className="text-sm text-gray-500">
-                          Project: {session.projectId}
-                        </div>
-                      )}
-
-                      {session.liveUrl && (
-                        <div className="mt-3 p-3 bg-white rounded border">
-                          <div className="text-xs text-gray-500 mb-1">
-                            Live URL:
-                          </div>
-                          <code className="text-xs text-blue-600 break-all">
-                            {session.liveUrl}
-                          </code>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="mt-4 pt-4 border-t flex justify-between items-center text-sm text-gray-500">
-                <span>Auto-refreshing every 5 seconds</span>
-                <button
-                  onClick={fetchLiveSessions}
-                  disabled={isPollingLiveSessions}
-                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-                >
-                  {isPollingLiveSessions ? "Refreshing..." : "Refresh Now"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Logs Dropdown */}
+        {/* Logs Section */}
         {showLogs && (
-          <div className="bg-white rounded-lg shadow-sm border">
-            <div className="p-4 border-b flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">
-                Execution Logs ({logs.length})
-              </h2>
-              <button
-                onClick={clearLogs}
-                className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-              >
-                Clear Logs
-              </button>
-            </div>
-
-            <div className="max-h-80 overflow-y-auto p-4 space-y-3">
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "200px", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-black/60 border-t border-blue-800 overflow-hidden"
+          >
+            <ScrollArea className="h-full p-3 text-sm text-blue-200">
               {logs.length === 0 ? (
-                <div className="text-center text-gray-500 py-4">
-                  No execution logs yet. Start a conversation to see detailed
-                  logs.
-                </div>
+                <p className="text-gray-400">No logs yet...</p>
               ) : (
                 logs.map((log) => (
-                  <div
-                    key={log.id}
-                    className={`p-3 rounded-lg border-l-4 ${getLogColor(
-                      log.type
-                    )}`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium uppercase text-xs tracking-wide">
-                        {log.type}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {log.timestamp}
-                      </span>
-                    </div>
-
-                    <div className="text-sm mb-2">{log.description}</div>
-
-                    {(() => {
-                      if (log.data) {
-                        return (
-                          <details className="mt-2">
-                            <summary className="cursor-pointer text-xs text-gray-600 hover:text-gray-800">
-                              📄 View Data
-                            </summary>
-                            <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-x-auto">
-                              {JSON.stringify(log.data, null, 2)}
-                            </pre>
-                          </details>
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* Special handling for screenshots */}
-                    {(() => {
-                      if (
-                        log.type === "execute" &&
-                        log.data &&
-                        typeof log.data === "object" &&
-                        log.data !== null &&
-                        "logs" in log.data &&
-                        Array.isArray(
-                          (log.data as { logs: { screenshot?: string }[] }).logs
-                        )
-                      ) {
-                        return (
-                          <div className="mt-2 space-y-2">
-                            {(
-                              log.data as { logs: { screenshot?: string }[] }
-                            ).logs.map(
-                              (
-                                execLog: { screenshot?: string },
-                                index: number
-                              ) => (
-                                <div key={index}>
-                                  {execLog.screenshot && (
-                                    <div>
-                                      <p className="text-xs text-gray-600 mb-1">
-                                        Screenshot:
-                                      </p>
-                                      <Image
-                                        src={`data:image/png;base64,${execLog.screenshot}`}
-                                        alt="Browser screenshot"
-                                        className="max-w-full h-auto rounded border"
-                                        width={800}
-                                        height={600}
-                                        style={{
-                                          width: "auto",
-                                          height: "auto",
-                                        }}
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            )}
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
+                  <div key={log.id} className="mb-2">
+                    <p className="text-blue-300">
+                      [{log.timestamp}] [{log.type.toUpperCase()}]{" "}
+                      {log.description}
+                    </p>
                   </div>
                 ))
               )}
+            </ScrollArea>
+          </motion.div>
+        )}
+      </div>
+
+      {/* Browser Live View Section */}
+      <div className="flex-1 flex flex-col">
+        <div className="flex gap-2 p-4 bg-black/40 border-b border-blue-800">
+          <Button
+            variant="outline"
+            className="border-blue-600 text-blue-400 hover:bg-blue-900 hover:text-blue-300"
+            onClick={() => setShowBrowser(!showBrowser)}
+          >
+            <PanelRight className="mr-2 h-4 w-4" /> Toggle Browser View
+          </Button>
+          <Button
+            variant="outline"
+            className="border-blue-600 text-blue-400 hover:bg-blue-900 hover:text-blue-300"
+            onClick={() => setShowLogs(!showLogs)}
+          >
+            <List className="mr-2 h-4 w-4" /> Toggle Logs
+          </Button>
+
+          {/* Additional Controls */}
+          {liveSessionUrl && (
+            <Button
+              variant="outline"
+              className="border-green-600 text-green-400 hover:bg-green-900 hover:text-green-300"
+              onClick={() => setShowLiveViewer(!showLiveViewer)}
+            >
+              {showLiveViewer ? "Hide" : "Show"} Live Session
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            className="border-purple-600 text-purple-400 hover:bg-purple-900 hover:text-purple-300"
+            onClick={() => setShowLiveSessions(!showLiveSessions)}
+          >
+            Sessions ({liveSessions.length})
+          </Button>
+        </div>
+
+        {showBrowser || showLiveViewer ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex-1 bg-black/80 flex flex-col"
+          >
+            {/* Live Browser Session Viewer */}
+            {showLiveViewer && liveSessionUrl ? (
+              <div className="flex-1 relative">
+                <iframe
+                  src={liveSessionUrl}
+                  className="w-full h-full border-0"
+                  title="Live Browser Session"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                  allow="clipboard-read; clipboard-write; camera; microphone"
+                  loading="lazy"
+                />
+                <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
+                  🟢 LIVE
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-blue-300">
+                <div className="text-center">
+                  <p className="text-2xl mb-2">🔵</p>
+                  <p>Browser Live View Placeholder</p>
+                  <p className="text-sm text-gray-400 mt-2">
+                    Start a task to see browser automation
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Live Sessions Display */}
+            {showLiveSessions && (
+              <div className="bg-black/90 border-t border-blue-800 max-h-60 overflow-y-auto">
+                <div className="p-4">
+                  <h3 className="text-lg font-semibold text-blue-400 mb-3">
+                    🌐 Live Sessions ({liveSessions.length})
+                  </h3>
+
+                  {liveSessions.length === 0 ? (
+                    <div className="text-center py-4 text-gray-400">
+                      <p>No active sessions</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {liveSessions.map((session, index) => (
+                        <div
+                          key={session.id || index}
+                          className="border border-blue-700 rounded p-3 bg-black/40"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                              <span className="text-blue-300">
+                                Session {session.id || `#${index + 1}`}
+                              </span>
+                              {session.status && (
+                                <span
+                                  className={`px-2 py-1 text-xs rounded ${
+                                    session.status === "RUNNING"
+                                      ? "bg-green-900 text-green-300"
+                                      : "bg-gray-700 text-gray-300"
+                                  }`}
+                                >
+                                  {session.status}
+                                </span>
+                              )}
+                            </div>
+                            {session.liveUrl && (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setLiveSessionUrl(session.liveUrl);
+                                  setShowLiveViewer(true);
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-xs"
+                              >
+                                View Live
+                              </Button>
+                            )}
+                          </div>
+                          {session.createdAt && (
+                            <div className="text-xs text-gray-400 mt-1">
+                              Created:{" "}
+                              {new Date(session.createdAt).toLocaleString()}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-gray-400">
+            <div className="text-center">
+              <p className="text-xl mb-2">🖥️</p>
+              <p>Enable Browser View to see content</p>
+              <p className="text-sm mt-2">
+                Click &quot;Toggle Browser View&quot; above
+              </p>
             </div>
           </div>
         )}

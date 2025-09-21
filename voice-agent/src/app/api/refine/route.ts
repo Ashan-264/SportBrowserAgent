@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const { intent, firecrawlData } = await request.json();
+    const { intent } = await request.json();
 
-    if (!intent || !firecrawlData) {
+    if (!intent) {
       return NextResponse.json(
-        { error: "Intent and firecrawlData are required" },
+        { error: "Intent is required" },
         { status: 400 }
       );
     }
@@ -15,20 +15,16 @@ export async function POST(request: NextRequest) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    const prompt = `Based on the user intent and scraped web content, create detailed browser automation steps.
+    const prompt = `Based on the user intent, create detailed browser automation steps.
 
 USER INTENT:
 ${JSON.stringify(intent, null, 2)}
-
-SCRAPED CONTENT:
-Title: ${firecrawlData.title}
-URL: ${firecrawlData.url}
-Content: ${firecrawlData.content.substring(0, 2000)}...
 
 AUTOMATION STRATEGY:
 - For factual queries (weather, definitions, quick facts): Extract from search result snippets
 - For news/articles/detailed content: CLICK THROUGH to the first relevant result and extract from the actual page
 - For current events/news: Always click through to news sources, don't rely on search snippets
+- For search queries: Use DuckDuckGo as the primary search engine to avoid CAPTCHAs
 
 Create a JSON response with automation steps for Playwright/Browserbase. Output ONLY valid JSON with this structure:
 {
