@@ -1274,6 +1274,13 @@ export default function BrowserAgentUI() {
               <List className="mr-2 h-4 w-4" />
               {showLogs ? "Hide" : "Show"} Logs
             </Button>
+
+            <Button
+              onClick={closeSession}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              🗑️ Close Browser Session
+            </Button>
           </div>
 
           {debugUrl && (
@@ -1288,7 +1295,11 @@ export default function BrowserAgentUI() {
         <div className="flex-1 flex min-h-0">
           {/* Browser View */}
           {showBrowser ? (
-            <div className={`${showLogs ? "flex-1" : "w-full"} bg-black/20 flex flex-col min-h-0`}>
+            <div
+              className={`${
+                showLogs ? "flex-1" : "w-full"
+              } bg-black/20 flex flex-col min-h-0`}
+            >
               <StagehandEmbed debugUrl={debugUrl} />
             </div>
           ) : (

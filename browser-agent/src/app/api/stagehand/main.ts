@@ -177,15 +177,20 @@ async function main(stagehand: Stagehand, userCommand: string) {
 
 export async function closeStagehandSession(sessionId: string) {
   try {
-    const stagehand = new Stagehand({
-      env: "BROWSERBASE",
-      apiKey: process.env.BROWSERBASE_API_KEY,
-      projectId: process.env.BROWSERBASE_PROJECT_ID,
-      browserbaseSessionID: sessionId,
-      disablePino: true,
+    // Import Browserbase SDK
+    const { Browserbase } = await import("@browserbasehq/sdk");
+
+    // Initialize Browserbase client
+    const browserbase = new Browserbase({
+      apiKey: process.env.BROWSERBASE_API_KEY!,
     });
-    await stagehand.init();
-    await stagehand.close();
+
+    // Directly close the session via Browserbase API
+    await browserbase.sessions.update(sessionId, {
+      status: "REQUEST_RELEASE",
+      projectId: process.env.BROWSERBASE_PROJECT_ID!,
+    });
+
     return { success: true, message: "Session closed successfully" };
   } catch (error) {
     console.error("Error closing session:", error);
@@ -199,7 +204,7 @@ export async function closeStagehandSession(sessionId: string) {
 export async function runStagehand(
   command: string,
   sessionId?: string,
-  closeSession = false
+  closeSession = false // Default to false to keep sessions persistent
 ) {
   const stagehand = new Stagehand({
     env: "BROWSERBASE",
@@ -220,38 +225,79 @@ export async function runStagehand(
     const result = await main(stagehand, command);
 
     console.log("Stagehand action completed successfully!");
+
+    // Only close session if explicitly requested
     if (closeSession) {
+      console.log("Closing session as requested...");
       await stagehand.close();
+    } else {
+      console.log("Keeping browser session alive for continued use...");
     }
+
     return result;
   } catch (error) {
     console.error("Error in runStagehand:", error);
+
+    // Only close on error if explicitly requested, otherwise keep session for debugging
     if (closeSession) {
       try {
         await stagehand.close();
       } catch (closeError) {
         console.error("Error closing stagehand:", closeError);
       }
+    } else {
+      console.log("Keeping session alive despite error for debugging...");
     }
+
     return {
       success: false,
-      message: `Failed to execute command: ${error.message}`,
-      data: { error: error.message },
+      message: `Failed to execute command: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      data: { error: error instanceof Error ? error.message : String(error) },
     };
   }
 }
 
 /**
- * Start a Browserbase session
+ * Start a persistent Browserbase session with extended timeout
  */
 export async function startBBSSession() {
   const browserbase = new Browserbase();
-  const session = await browserbase.sessions.create({
-    projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  });
-  const debugUrl = await browserbase.sessions.debug(session.id);
-  return {
-    sessionId: session.id,
-    debugUrl: debugUrl.debuggerFullscreenUrl,
-  };
+
+  try {
+    // Create session with extended timeout for persistence
+    const session = await browserbase.sessions.create({
+      projectId: process.env.BROWSERBASE_PROJECT_ID!,
+      // Extended timeout to keep sessions alive longer (in seconds)
+      timeout: 7200, // 2 hours timeout for extended persistence
+    });
+
+    const debugUrl = await browserbase.sessions.debug(session.id);
+
+    console.log(`Created persistent browser session: ${session.id}`);
+    console.log(
+      `Session configured for 2-hour persistence with extended timeout`
+    );
+
+    return {
+      sessionId: session.id,
+      debugUrl: debugUrl.debuggerFullscreenUrl,
+    };
+  } catch (error) {
+    console.error("Error creating persistent session:", error);
+    // Fallback to standard session if extended timeout fails
+    const session = await browserbase.sessions.create({
+      projectId: process.env.BROWSERBASE_PROJECT_ID!,
+    });
+
+    const debugUrl = await browserbase.sessions.debug(session.id);
+
+    console.log(`Created fallback session: ${session.id}`);
+
+    return {
+      sessionId: session.id,
+      debugUrl: debugUrl.debuggerFullscreenUrl,
+    };
+  }
 }

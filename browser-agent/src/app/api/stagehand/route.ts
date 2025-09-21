@@ -3,7 +3,7 @@ import { runStagehand, startBBSSession } from "./main";
 
 export async function POST(request: NextRequest) {
   try {
-    const { command, sessionId, persistSession = false } = await request.json();
+    const { command, sessionId, persistSession = true } = await request.json(); // Default to true for persistence
 
     if (!command) {
       return NextResponse.json(
@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
       finalSessionId = session.sessionId;
     }
 
+    // Run Stagehand with persistence enabled by default (closeSession = false)
     const result = await runStagehand(command, finalSessionId, !persistSession);
 
     // Format the result for display in chat
