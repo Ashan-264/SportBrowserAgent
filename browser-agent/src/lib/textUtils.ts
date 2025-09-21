@@ -1,12 +1,15 @@
 /**
  * Splits a long string into chunks of maximum specified length,
  * preferring to break on sentence boundaries or spaces instead of cutting words in half.
- * 
+ *
  * @param text - The text to split into chunks
  * @param maxLength - Maximum character length per chunk (default: 2000)
  * @returns Array of text chunks
  */
-export function splitTextIntoChunks(text: string, maxLength: number = 2000): string[] {
+export function splitTextIntoChunks(
+  text: string,
+  maxLength: number = 2000
+): string[] {
   if (!text || text.length <= maxLength) {
     return [text];
   }
@@ -26,7 +29,7 @@ export function splitTextIntoChunks(text: string, maxLength: number = 2000): str
       chunkEnd = chunk.length;
     } else {
       // No good sentence break, try to find a space
-      const lastSpaceIndex = chunk.lastIndexOf(' ');
+      const lastSpaceIndex = chunk.lastIndexOf(" ");
       if (lastSpaceIndex > maxLength * 0.5) {
         // Good space break found (at least 50% of max length)
         chunkEnd = lastSpaceIndex;
@@ -45,13 +48,13 @@ export function splitTextIntoChunks(text: string, maxLength: number = 2000): str
     chunks.push(currentText);
   }
 
-  return chunks.filter(chunk => chunk.length > 0);
+  return chunks.filter((chunk) => chunk.length > 0);
 }
 
 /**
  * Estimates the total duration for multiple text chunks when synthesized to speech.
  * Uses approximate reading speed of 150 words per minute.
- * 
+ *
  * @param chunks - Array of text chunks
  * @returns Estimated duration in milliseconds
  */
@@ -59,10 +62,10 @@ export function estimateSpeechDuration(chunks: string[]): number {
   const totalWords = chunks.reduce((count, chunk) => {
     return count + chunk.split(/\s+/).length;
   }, 0);
-  
+
   // Assume 150 words per minute average reading speed
   const wordsPerMinute = 150;
   const estimatedMinutes = totalWords / wordsPerMinute;
-  
+
   return Math.ceil(estimatedMinutes * 60 * 1000); // Convert to milliseconds
 }

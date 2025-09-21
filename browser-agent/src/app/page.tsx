@@ -74,8 +74,8 @@ export default function BrowserAgentUI() {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
     null
   );
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const isPlayingRef = useRef<boolean>(false);
 
   // Data management functions
   const addExtractedData = (content: string, type: string, source?: string) => {
@@ -149,7 +149,6 @@ export default function BrowserAgentUI() {
 
       recorder.start();
       setMediaRecorder(recorder);
-      setAudioChunks(chunks);
       setIsRecording(true);
       addLog("Recording started");
     } catch (error) {
@@ -192,11 +191,23 @@ export default function BrowserAgentUI() {
     }
   };
 
+  const stopSpeech = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current.src = "";
+    }
+    setIsPlaying(false);
+    isPlayingRef.current = false;
+    addLog("Speech playback stopped by user");
+  };
+
   const synthesizeAndPlaySpeech = async (text: string) => {
     if (!speechMode) return;
 
     try {
       setIsPlaying(true);
+      isPlayingRef.current = true;
       addLog("Synthesizing speech with Deepgram");
       const response = await fetch("/api/speech/synthesize", {
         method: "POST",
@@ -205,24 +216,134 @@ export default function BrowserAgentUI() {
       });
 
       const data = await response.json();
-      if (data.success && audioRef.current) {
-        const audioBlob = new Blob([Buffer.from(data.audio, "base64")], {
-          type: data.mimeType,
-        });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        audioRef.current.src = audioUrl;
-        audioRef.current.onended = () => {
-          setIsPlaying(false);
-          URL.revokeObjectURL(audioUrl);
-          addLog("Speech playback completed");
-        };
-        await audioRef.current.play();
-        addLog("Playing synthesized speech");
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}: ${data.error || "Unknown error"}`
+        );
+      }
+
+      if (data.success && audioRef.current && data.segments) {
+        addLog(`Playing ${data.segments.length} audio segments sequentially`);
+
+        // Check if we have valid audio data
+        const validSegments = data.segments.filter((seg) => seg.audio);
+        if (validSegments.length === 0) {
+          addLog("No valid audio segments found in response");
+          return;
+        }
+
+        addLog(`Found ${validSegments.length} valid audio segments`);
+
+        // Play audio segments sequentially
+        for (let i = 0; i < data.segments.length; i++) {
+          // Check if playback was stopped using the ref
+          if (!isPlayingRef.current) {
+            addLog("Speech playback interrupted");
+            break;
+          }
+
+          const segment = data.segments[i];
+
+          if (!segment.audio) {
+            addLog(
+              `Skipping segment ${i + 1}: ${segment.error || "No audio data"}`
+            );
+            continue;
+          }
+
+          try {
+            addLog(`Playing segment ${i + 1}/${data.segments.length}`);
+
+            // Convert base64 to binary string, then to Uint8Array for browser compatibility
+            const binaryString = atob(segment.audio);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let j = 0; j < binaryString.length; j++) {
+              bytes[j] = binaryString.charCodeAt(j);
+            }
+
+            const audioBlob = new Blob([bytes], {
+              type: data.mimeType || "audio/wav",
+            });
+            const audioUrl = URL.createObjectURL(audioBlob);
+
+            audioRef.current.src = audioUrl;
+
+            // Wait for this segment to finish before playing the next
+            await new Promise<void>((resolve, reject) => {
+              if (!audioRef.current) {
+                reject(new Error("Audio element not available"));
+                return;
+              }
+
+              const onEnded = () => {
+                audioRef.current?.removeEventListener("ended", onEnded);
+                audioRef.current?.removeEventListener("error", onError);
+                URL.revokeObjectURL(audioUrl);
+                resolve();
+              };
+
+              const onError = (error: Event) => {
+                console.error("Audio playback error:", error);
+                addLog(
+                  `Audio playback error: ${error.type || "Unknown audio error"}`
+                );
+                audioRef.current?.removeEventListener("ended", onEnded);
+                audioRef.current?.removeEventListener("error", onError);
+                URL.revokeObjectURL(audioUrl);
+                reject(
+                  new Error(
+                    `Audio playback error: ${error.type || "Unknown error"}`
+                  )
+                );
+              };
+
+              audioRef.current.addEventListener("ended", onEnded);
+              audioRef.current.addEventListener("error", onError);
+
+              // Add loading event listener for debugging
+              const onLoadStart = () => {
+                addLog(`Audio loading started for segment ${i + 1}`);
+              };
+              const onCanPlay = () => {
+                addLog(`Audio ready to play for segment ${i + 1}`);
+              };
+
+              audioRef.current.addEventListener("loadstart", onLoadStart);
+              audioRef.current.addEventListener("canplay", onCanPlay);
+
+              audioRef.current.play().catch((playError) => {
+                console.error("Play error:", playError);
+                addLog(`Audio play failed: ${playError.message}`);
+                audioRef.current?.removeEventListener("loadstart", onLoadStart);
+                audioRef.current?.removeEventListener("canplay", onCanPlay);
+                reject(playError);
+              });
+            });
+
+            // Small pause between segments and check if still playing
+            if (i < data.segments.length - 1 && isPlayingRef.current) {
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+          } catch (segmentError) {
+            console.error(`Error playing segment ${i + 1}:`, segmentError);
+            addLog(`Error playing segment ${i + 1}: ${segmentError}`);
+          }
+        }
+
+        if (isPlayingRef.current) {
+          addLog("All speech segments played successfully");
+        }
+      } else {
+        console.error("Speech synthesis failed:", data.error);
+        addLog(`Speech synthesis failed: ${data.error}`);
       }
     } catch (error) {
       console.error("Error synthesizing speech:", error);
-      setIsPlaying(false);
       addLog(`Speech synthesis error: ${error}`);
+    } finally {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
     }
   };
 
@@ -469,14 +590,23 @@ export default function BrowserAgentUI() {
   const scrollToBottom = () => {
     setTimeout(() => {
       if (scrollAreaRef.current) {
-        const scrollContainer = scrollAreaRef.current.querySelector(
-          "[data-radix-scroll-area-viewport]"
-        );
-        if (scrollContainer) {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        try {
+          const scrollContainer = scrollAreaRef.current.querySelector(
+            "[data-radix-scroll-area-viewport]"
+          );
+          if (scrollContainer) {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+          }
+        } catch (error) {
+          // Fallback: try to scroll the ref element directly
+          console.warn("Primary scroll failed, trying fallback:", error);
+          if (scrollAreaRef.current.scrollTop !== undefined) {
+            scrollAreaRef.current.scrollTop =
+              scrollAreaRef.current.scrollHeight;
+          }
         }
       }
-    }, 100);
+    }, 150); // Increased timeout for better reliability
   };
 
   useEffect(() => {
@@ -780,6 +910,19 @@ export default function BrowserAgentUI() {
                   <Volume2 className="mr-1 h-3 w-3" />
                   {speechMode ? "Speech On" : "Speech Off"}
                 </Button>
+
+                {speechMode && isPlaying && (
+                  <Button
+                    onClick={stopSpeech}
+                    variant="outline"
+                    size="sm"
+                    className="border-red-600 text-red-400 hover:bg-red-900 text-xs animate-pulse"
+                    title="Stop Speech"
+                  >
+                    <Volume2 className="mr-1 h-3 w-3" />
+                    Stop
+                  </Button>
+                )}
 
                 <div className="flex border border-gray-600 rounded-md overflow-hidden">
                   <Button
@@ -1092,66 +1235,6 @@ export default function BrowserAgentUI() {
             <audio ref={audioRef} style={{ display: "none" }} />
           </CardContent>
         </Card>
-
-        {/* Logs Section */}
-        {showLogs && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "240px", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="bg-black/60 border-t border-blue-800 overflow-hidden"
-          >
-            <div className="flex justify-between items-center p-3 border-b border-blue-700 bg-gray-900/50">
-              <h3 className="text-sm font-semibold text-blue-300 flex items-center gap-2">
-                <List className="h-4 w-4" />
-                System Logs
-                <span className="text-xs bg-blue-600 px-2 py-1 rounded-full">
-                  {logs.length}
-                </span>
-              </h3>
-              <div className="flex border border-gray-600 rounded-md overflow-hidden">
-                <Button
-                  onClick={exportLogsAsCSV}
-                  variant="ghost"
-                  size="sm"
-                  className="border-0 rounded-none text-green-400 hover:bg-green-900/50 text-xs"
-                  title="Export Logs as CSV"
-                >
-                  <Download className="mr-1 h-3 w-3" />
-                  CSV
-                </Button>
-                <Button
-                  onClick={exportLogsAsPDF}
-                  variant="ghost"
-                  size="sm"
-                  className="border-0 rounded-none border-l border-gray-600 text-green-400 hover:bg-green-900/50 text-xs"
-                  title="Export Logs as PDF"
-                >
-                  <FileText className="mr-1 h-3 w-3" />
-                  PDF
-                </Button>
-              </div>
-            </div>
-            <ScrollArea className="h-full p-3">
-              <div className="space-y-1">
-                {logs.length > 0 ? (
-                  logs.map((log, index) => (
-                    <div
-                      key={index}
-                      className="p-2 bg-gray-900/30 rounded text-xs font-mono text-blue-200 border-l-2 border-blue-500/30"
-                    >
-                      {log}
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center text-gray-400 italic py-8">
-                    No logs yet...
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-          </motion.div>
-        )}
       </div>
 
       {/* Browser Live View Section */}
@@ -1162,15 +1245,31 @@ export default function BrowserAgentUI() {
             <Button
               variant="outline"
               className="border-blue-600 text-blue-400 hover:bg-blue-900"
-              onClick={() => setShowBrowser(!showBrowser)}
+              onClick={() => {
+                const newState = !showBrowser;
+                setShowBrowser(newState);
+                addLog(
+                  `Browser live view ${newState ? "enabled" : "disabled"}`
+                );
+                if (newState && debugUrl) {
+                  addLog(`Browser view showing debug session: ${debugUrl}`);
+                }
+              }}
             >
               <PanelRight className="mr-2 h-4 w-4" />
               {showBrowser ? "Hide" : "Show"} Browser
             </Button>
+
             <Button
               variant="outline"
-              className="border-blue-600 text-blue-400 hover:bg-blue-900"
-              onClick={() => setShowLogs(!showLogs)}
+              className={`border-blue-600 hover:bg-blue-900 ${
+                showLogs ? "text-blue-300 bg-blue-900/50" : "text-blue-400"
+              }`}
+              onClick={() => {
+                const newState = !showLogs;
+                setShowLogs(newState);
+                addLog(`System logs panel ${newState ? "opened" : "closed"}`);
+              }}
             >
               <List className="mr-2 h-4 w-4" />
               {showLogs ? "Hide" : "Show"} Logs
@@ -1178,28 +1277,101 @@ export default function BrowserAgentUI() {
           </div>
 
           {debugUrl && (
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-gray-400 flex items-center gap-2">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
               <span>Debug Session Active</span>
             </div>
           )}
         </div>
 
         {/* Browser Content */}
-        {showBrowser ? (
-          <div className="flex-1 bg-black/20">
-            <StagehandEmbed debugUrl={debugUrl} />
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-900/50 to-gray-800/50 text-gray-500">
-            <div className="text-center">
-              <PanelRight className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">Browser View Disabled</p>
-              <p className="text-sm">
-                Click &quot;Show Browser&quot; to view automation
-              </p>
+        <div className="flex-1 flex min-h-0">
+          {/* Browser View */}
+          {showBrowser ? (
+            <div className={`${showLogs ? "flex-1" : "w-full"} bg-black/20 flex flex-col min-h-0`}>
+              <StagehandEmbed debugUrl={debugUrl} />
             </div>
-          </div>
-        )}
+          ) : (
+            <div
+              className={`${
+                showLogs ? "flex-1" : "w-full"
+              } flex items-center justify-center bg-gradient-to-br from-gray-900/50 to-gray-800/50 text-gray-500`}
+            >
+              <div className="text-center">
+                <PanelRight className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium">Browser View Disabled</p>
+                <p className="text-sm">
+                  Click &quot;Show Browser&quot; to view automation
+                </p>
+                {logs.length > 0 && (
+                  <p className="text-xs text-blue-400 mt-2">
+                    {logs.length} log entries tracked in the logs panel
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Logs Side Panel - Always available */}
+          {showLogs && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: "400px", opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              className="bg-black/60 border-l border-blue-800 overflow-hidden flex flex-col min-h-0"
+            >
+              <div className="flex justify-between items-center p-3 border-b border-blue-700 bg-gray-900/50 flex-shrink-0">
+                <h3 className="text-sm font-semibold text-blue-300 flex items-center gap-2">
+                  <List className="h-4 w-4" />
+                  System Logs
+                  <span className="text-xs bg-blue-600 px-2 py-1 rounded-full">
+                    {logs.length}
+                  </span>
+                </h3>
+                <div className="flex border border-gray-600 rounded-md overflow-hidden">
+                  <Button
+                    onClick={exportLogsAsCSV}
+                    variant="ghost"
+                    size="sm"
+                    className="border-0 rounded-none text-green-400 hover:bg-green-900/50 text-xs"
+                    title="Export Logs as CSV"
+                  >
+                    <Download className="mr-1 h-3 w-3" />
+                    CSV
+                  </Button>
+                  <Button
+                    onClick={exportLogsAsPDF}
+                    variant="ghost"
+                    size="sm"
+                    className="border-0 rounded-none border-l border-gray-600 text-green-400 hover:bg-green-900/50 text-xs"
+                    title="Export Logs as PDF"
+                  >
+                    <FileText className="mr-1 h-3 w-3" />
+                    PDF
+                  </Button>
+                </div>
+              </div>
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="p-3 space-y-1">
+                  {logs.length > 0 ? (
+                    logs.map((log, index) => (
+                      <div
+                        key={index}
+                        className="p-2 bg-gray-900/30 rounded text-xs font-mono text-blue-200 border-l-2 border-blue-500/30 break-words"
+                      >
+                        {log}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center text-gray-400 italic py-8">
+                      No logs yet...
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </motion.div>
+          )}
+        </div>
       </div>
     </div>
   );
