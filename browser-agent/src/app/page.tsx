@@ -77,6 +77,9 @@ export default function BrowserAgentUI() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const isPlayingRef = useRef<boolean>(false);
 
+  // UI state for chat visibility
+  const [showChat, setShowChat] = useState(true);
+
   // Data management functions
   const addExtractedData = (content: string, type: string, source?: string) => {
     const newItem: ExtractedDataItem = {
@@ -625,7 +628,7 @@ export default function BrowserAgentUI() {
 
     const userMessage: Message = {
       role: "user",
-      content: `🤘 Stagehand: ${inputMessage}`,
+      content: `${inputMessage}`,
       timestamp: new Date(),
     };
 
@@ -681,7 +684,41 @@ export default function BrowserAgentUI() {
 
       let resultContent = "";
       if (data.success) {
-        resultContent = data.result;
+        // Prepare raw response for formatting (similar to runAgent)
+        const rawResponse = data.result;
+
+        // Format the response using Gemini to make it conversational
+        try {
+          addStagehandLog("Formatting response with Gemini");
+          const formatResponse = await fetch("/api/format", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              agentResponse: rawResponse,
+              task: originalCommand,
+            }),
+          });
+
+          const formatData = await formatResponse.json();
+
+          if (formatData.success && formatData.formattedResponse) {
+            resultContent = formatData.formattedResponse;
+            addStagehandLog("Response formatted successfully");
+          } else {
+            // Fallback to original response if formatting fails
+            resultContent = rawResponse;
+            addStagehandLog("Formatting failed, using original response");
+          }
+        } catch (formatError) {
+          console.error("Error formatting response:", formatError);
+          addStagehandLog(
+            "Formatting error, using original response",
+            String(formatError)
+          );
+          // Fallback to original response
+          resultContent = rawResponse;
+        }
+
         addStagehandLog("Command executed successfully");
 
         // If this was an extraction, store the data
@@ -759,7 +796,7 @@ export default function BrowserAgentUI() {
         body: JSON.stringify({
           action: "run",
           sessionId: sessionId,
-          command: inputMessage,
+          command: command, // Use the stored command variable instead of inputMessage
         }),
       });
 
@@ -767,26 +804,74 @@ export default function BrowserAgentUI() {
 
       let resultContent = "";
       if (data.success) {
-        resultContent = `🤖 **Agent Execution Complete**\n\n`;
-        resultContent += `**Task:** ${command}\n\n`;
+        // Prepare raw response for formatting
+        let rawResponse = `🤖 Agent Execution Complete\n\nTask: ${command}\n\n`;
 
         if (data.logs && data.logs.length > 0) {
-          resultContent += `**Logs:**\n${data.logs
+          rawResponse += `Logs:\n${data.logs
             .map((log: string) => `• ${log}`)
             .join("\n")}\n\n`;
 
-          // Add agent logs to our log system
+          // Add agent logs to our log system with enhanced display
           data.logs.forEach((log: string) => {
-            addStagehandLog("Agent step", log);
+            // Check if this is a browsing action log
+            if (
+              log.includes("click") ||
+              log.includes("navigate") ||
+              log.includes("type") ||
+              log.includes("extract") ||
+              log.includes("goto") ||
+              log.includes("action") ||
+              log.toLowerCase().includes("performing") ||
+              log.toLowerCase().includes("executing") ||
+              log.toLowerCase().includes("visiting") ||
+              log.toLowerCase().includes("searching")
+            ) {
+              addStagehandLog("🌐 Agent browsing", log);
+            } else {
+              addStagehandLog("Agent step", log);
+            }
           });
         }
 
         if (data.result) {
-          resultContent += `**Agent Results:**\n\`\`\`json\n${JSON.stringify(
+          rawResponse += `Agent Results:\n${JSON.stringify(
             data.result,
             null,
             2
-          )}\n\`\`\``;
+          )}`;
+        }
+
+        // Format the response using Gemini
+        try {
+          addStagehandLog("Formatting response with Gemini");
+          const formatResponse = await fetch("/api/format", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              agentResponse: rawResponse,
+              task: command,
+            }),
+          });
+
+          const formatData = await formatResponse.json();
+
+          if (formatData.success && formatData.formattedResponse) {
+            resultContent = formatData.formattedResponse;
+            addStagehandLog("Response formatted successfully");
+          } else {
+            // Fallback to original response if formatting fails
+            resultContent = rawResponse;
+            addStagehandLog("Formatting failed, using original response");
+          }
+        } catch (formatError) {
+          console.error("Error formatting response:", formatError);
+          addStagehandLog(
+            "Formatting error, using original response",
+            String(formatError)
+          );
+          // Fallback to original response
+          resultContent = rawResponse;
         }
 
         addStagehandLog("Agent execution completed successfully");
@@ -855,387 +940,391 @@ export default function BrowserAgentUI() {
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-black via-gray-900 to-blue-950 text-white">
-      {/* Chatbox Section */}
-      <div className="w-1/3 border-r border-blue-800 flex flex-col min-h-0">
-        <Card className="bg-black/40 border-blue-800 h-full rounded-none flex flex-col min-h-0">
-          <CardContent className="p-4 h-full flex flex-col min-h-0">
-            {/* Header Section */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-bold flex items-center gap-2">
-                  <MessageSquare className="text-blue-400" />
-                  {conversationMode ? "Conversation" : "Automation"}
-                  {sessionActive && (
-                    <span className="text-xs bg-green-600 px-2 py-1 rounded-full">
-                      Session Active
-                    </span>
-                  )}
-                </h2>
-                <Button
-                  onClick={clearChat}
-                  variant="outline"
-                  size="sm"
-                  className="border-red-600 text-red-400 hover:bg-red-900"
-                >
-                  Clear Chat
-                </Button>
-              </div>
-
-              {/* Control Bar */}
-              <div className="flex gap-2 mb-3">
-                <Button
-                  onClick={toggleConversationMode}
-                  variant="outline"
-                  size="sm"
-                  className={`border-blue-600 text-xs ${
-                    conversationMode
-                      ? "bg-blue-600 text-white hover:bg-blue-700"
-                      : "text-blue-400 hover:bg-blue-900"
-                  }`}
-                >
-                  <MessageCircle className="mr-1 h-3 w-3" />
-                  {conversationMode ? "Chat Mode" : "Auto Mode"}
-                </Button>
-
-                <Button
-                  onClick={() => setSpeechMode(!speechMode)}
-                  variant="outline"
-                  size="sm"
-                  className={`border-purple-600 text-xs ${
-                    speechMode
-                      ? "bg-purple-600 text-white hover:bg-purple-700"
-                      : "text-purple-400 hover:bg-purple-900"
-                  }`}
-                >
-                  <Volume2 className="mr-1 h-3 w-3" />
-                  {speechMode ? "Speech On" : "Speech Off"}
-                </Button>
-
-                {speechMode && isPlaying && (
+      {/* Chatbox Section - Conditionally rendered */}
+      {showChat && (
+        <div className="w-1/3 border-r border-blue-800 flex flex-col min-h-0">
+          <Card className="bg-black/40 border-blue-800 h-full rounded-none flex flex-col min-h-0">
+            <CardContent className="p-4 h-full flex flex-col min-h-0">
+              {/* Header Section */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-bold flex items-center gap-2">
+                    <MessageSquare className="text-blue-400" />
+                    {conversationMode ? "Conversation" : "Automation"}
+                    {sessionActive && (
+                      <span className="text-xs bg-green-600 px-2 py-1 rounded-full">
+                        Session Active
+                      </span>
+                    )}
+                  </h2>
                   <Button
-                    onClick={stopSpeech}
+                    onClick={clearChat}
                     variant="outline"
                     size="sm"
-                    className="border-red-600 text-red-400 hover:bg-red-900 text-xs animate-pulse"
-                    title="Stop Speech"
+                    className="border-red-600 text-red-400 hover:bg-red-900"
+                  >
+                    Clear Chat
+                  </Button>
+                </div>
+
+                {/* Control Bar */}
+                <div className="flex gap-2 mb-3">
+                  <Button
+                    onClick={toggleConversationMode}
+                    variant="outline"
+                    size="sm"
+                    className={`border-blue-600 text-xs ${
+                      conversationMode
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "text-blue-400 hover:bg-blue-900"
+                    }`}
+                  >
+                    <MessageCircle className="mr-1 h-3 w-3" />
+                    {conversationMode ? "Chat Mode" : "Auto Mode"}
+                  </Button>
+
+                  <Button
+                    onClick={() => setSpeechMode(!speechMode)}
+                    variant="outline"
+                    size="sm"
+                    className={`border-purple-600 text-xs ${
+                      speechMode
+                        ? "bg-purple-600 text-white hover:bg-purple-700"
+                        : "text-purple-400 hover:bg-purple-900"
+                    }`}
                   >
                     <Volume2 className="mr-1 h-3 w-3" />
-                    Stop
+                    {speechMode ? "Speech On" : "Speech Off"}
                   </Button>
-                )}
 
-                <div className="flex border border-gray-600 rounded-md overflow-hidden">
-                  <Button
-                    onClick={exportChatAsCSV}
-                    variant="ghost"
-                    size="sm"
-                    className="border-0 rounded-none text-green-400 hover:bg-green-900/50 text-xs"
-                    title="Export Chat as CSV"
-                  >
-                    <Download className="mr-1 h-3 w-3" />
-                    CSV
-                  </Button>
-                  <Button
-                    onClick={exportChatAsPDF}
-                    variant="ghost"
-                    size="sm"
-                    className="border-0 rounded-none border-l border-gray-600 text-green-400 hover:bg-green-900/50 text-xs"
-                    title="Export Chat as PDF"
-                  >
-                    <FileText className="mr-1 h-3 w-3" />
-                    PDF
-                  </Button>
+                  {speechMode && isPlaying && (
+                    <Button
+                      onClick={stopSpeech}
+                      variant="outline"
+                      size="sm"
+                      className="border-red-600 text-red-400 hover:bg-red-900 text-xs animate-pulse"
+                      title="Stop Speech"
+                    >
+                      <Volume2 className="mr-1 h-3 w-3" />
+                      Stop
+                    </Button>
+                  )}
+
+                  <div className="flex border border-gray-600 rounded-md overflow-hidden">
+                    <Button
+                      onClick={exportChatAsCSV}
+                      variant="ghost"
+                      size="sm"
+                      className="border-0 rounded-none text-green-400 hover:bg-green-900/50 text-xs"
+                      title="Export Chat as CSV"
+                    >
+                      <Download className="mr-1 h-3 w-3" />
+                      CSV
+                    </Button>
+                    <Button
+                      onClick={exportChatAsPDF}
+                      variant="ghost"
+                      size="sm"
+                      className="border-0 rounded-none border-l border-gray-600 text-green-400 hover:bg-green-900/50 text-xs"
+                      title="Export Chat as PDF"
+                    >
+                      <FileText className="mr-1 h-3 w-3" />
+                      PDF
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Session Status Panel */}
-            {sessionActive && (
-              <div className="mb-4 p-3 bg-gradient-to-r from-gray-900/50 to-gray-800/50 border border-gray-700 rounded-lg">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-green-400">
-                      🌐 Active Browser Session
-                    </h3>
-                    {extractedData.length > 0 && (
-                      <span className="text-xs bg-blue-600 px-2 py-1 rounded-full">
-                        {extractedData.length} items
-                      </span>
-                    )}
+              {/* Session Status Panel */}
+              {/* {sessionActive && (
+                <div className="mb-4 p-3 bg-gradient-to-r from-gray-900/50 to-gray-800/50 border border-gray-700 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-green-400">
+                        🌐 Active Browser Session
+                      </h3>
+                      {extractedData.length > 0 && (
+                        <span className="text-xs bg-blue-600 px-2 py-1 rounded-full">
+                          {extractedData.length} items
+                        </span>
+                      )}
+                    </div>
+                    <Button
+                      onClick={closeSession}
+                      variant="outline"
+                      size="sm"
+                      className="border-red-600 text-red-400 hover:bg-red-900 text-xs"
+                    >
+                      🗑️ Close Session
+                    </Button>
                   </div>
-                  <Button
-                    onClick={closeSession}
-                    variant="outline"
-                    size="sm"
-                    className="border-red-600 text-red-400 hover:bg-red-900 text-xs"
-                  >
-                    🗑️ Close Session
-                  </Button>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4 text-xs text-gray-300 mb-3">
-                  <div>
-                    <p className="text-gray-400">Current URL:</p>
-                    <p className="text-blue-300 truncate">
-                      {currentUrl ? new URL(currentUrl).hostname : "Not set"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400">Last Action:</p>
-                    <p className="text-green-300">{lastAction || "None"}</p>
-                  </div>
-                </div>
+                  <div className="grid grid-cols-2 gap-4 text-xs text-gray-300 mb-3">
+                    <div>
+                      <p className="text-gray-400">Current URL:</p>
+                      <p className="text-blue-300 truncate">
+                        {currentUrl ? new URL(currentUrl).hostname : "Not set"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Last Action:</p>
+                      <p className="text-green-300">{lastAction || "None"}</p>
+                    </div>
+                  </div> */}
 
-                {/* Data Management Controls */}
-                {extractedData.length > 0 && (
-                  <div className="border-t border-gray-600 pt-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-blue-300 font-medium">
-                        Extracted Data Management:
-                      </span>
-                      <div className="flex gap-1">
-                        <Button
-                          onClick={() => sortExtractedData("timestamp")}
-                          variant="outline"
-                          size="sm"
-                          className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 text-xs px-2 py-1"
-                          title="Sort by Time"
-                        >
-                          Time
-                        </Button>
-                        <Button
-                          onClick={() => sortExtractedData("type")}
-                          variant="outline"
-                          size="sm"
-                          className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 text-xs px-2 py-1"
-                          title="Sort by Type"
-                        >
-                          Type
-                        </Button>
-                        <Button
-                          onClick={clearExtractedData}
-                          variant="outline"
-                          size="sm"
-                          className="border-red-600 text-red-400 hover:bg-red-900/50 text-xs px-2 py-1"
-                          title="Clear Data"
-                        >
-                          Clear
-                        </Button>
+              {/* Data Management Controls */}
+              {/* {extractedData.length > 0 && (
+                    <div className="border-t border-gray-600 pt-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-blue-300 font-medium">
+                          Extracted Data Management:
+                        </span>
+                        <div className="flex gap-1">
+                          <Button
+                            onClick={() => sortExtractedData("timestamp")}
+                            variant="outline"
+                            size="sm"
+                            className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 text-xs px-2 py-1"
+                            title="Sort by Time"
+                          >
+                            Time
+                          </Button>
+                          <Button
+                            onClick={() => sortExtractedData("type")}
+                            variant="outline"
+                            size="sm"
+                            className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 text-xs px-2 py-1"
+                            title="Sort by Type"
+                          >
+                            Type
+                          </Button>
+                          <Button
+                            onClick={clearExtractedData}
+                            variant="outline"
+                            size="sm"
+                            className="border-red-600 text-red-400 hover:bg-red-900/50 text-xs px-2 py-1"
+                            title="Clear Data"
+                          >
+                            Clear
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="max-h-16 overflow-y-auto bg-black/30 rounded p-2">
+                        {extractedData.slice(-3).map((item) => (
+                          <p
+                            key={item.id}
+                            className="text-xs text-gray-400 truncate mb-1"
+                          >
+                            <span className="text-blue-400">{item.type}:</span>{" "}
+                            {item.content.substring(0, 60)}...
+                          </p>
+                        ))}
                       </div>
                     </div>
+                  )}
+                </div>
+              )} */}
 
-                    <div className="max-h-16 overflow-y-auto bg-black/30 rounded p-2">
-                      {extractedData.slice(-3).map((item) => (
-                        <p
-                          key={item.id}
-                          className="text-xs text-gray-400 truncate mb-1"
-                        >
-                          <span className="text-blue-400">{item.type}:</span>{" "}
-                          {item.content.substring(0, 60)}...
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <ScrollArea
-              ref={scrollAreaRef}
-              className="flex-1 rounded-md p-2 bg-black/30 h-0 min-h-0 overflow-auto"
-            >
-              <div className="space-y-3 text-sm">
-                {messages.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`p-3 rounded-md leading-relaxed ${
-                      message.role === "user"
-                        ? "bg-blue-900/50 border border-blue-800"
-                        : "bg-gray-900/50 border border-gray-700"
-                    }`}
-                  >
-                    <p
-                      className={`text-xs opacity-70 mb-1 ${
+              <ScrollArea
+                ref={scrollAreaRef}
+                className="flex-1 rounded-md p-2 bg-black/30 h-0 min-h-0 overflow-auto"
+              >
+                <div className="space-y-3 text-sm">
+                  {messages.map((message, index) => (
+                    <div
+                      key={index}
+                      className={`p-3 rounded-md leading-relaxed ${
                         message.role === "user"
-                          ? "text-blue-300"
-                          : "text-gray-300"
+                          ? "bg-blue-900/50 border border-blue-800"
+                          : "bg-gray-900/50 border border-gray-700"
                       }`}
                     >
-                      {message.role === "user" ? "You" : "Agent"}
-                    </p>
-                    <div className="whitespace-pre-wrap break-words overflow-x-auto text-white">
-                      {message.content}
+                      <p
+                        className={`text-xs opacity-70 mb-1 ${
+                          message.role === "user"
+                            ? "text-blue-300"
+                            : "text-gray-300"
+                        }`}
+                      >
+                        {message.role === "user" ? "You" : "Agent"}
+                      </p>
+                      <div className="whitespace-pre-wrap break-words overflow-x-auto text-white">
+                        {message.content}
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {(isLoading || isExecuting || isAgentRunning) && (
-                  <div className="p-3 rounded-md bg-gray-900/50 border border-gray-700 leading-relaxed">
-                    <p className="text-xs opacity-70 mb-1 text-gray-300">
-                      Agent
-                    </p>
-                    <div className="flex items-center gap-2 text-white">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
-                      <span>
-                        {isAgentRunning
-                          ? "Agent running..."
-                          : isExecuting
-                          ? "Executing..."
-                          : "Thinking..."}
-                      </span>
+                  ))}
+                  {(isLoading || isExecuting || isAgentRunning) && (
+                    <div className="p-3 rounded-md bg-gray-900/50 border border-gray-700 leading-relaxed">
+                      <p className="text-xs opacity-70 mb-1 text-gray-300">
+                        Agent
+                      </p>
+                      <div className="flex items-center gap-2 text-white">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
+                        <span>
+                          {isAgentRunning
+                            ? "Agent running..."
+                            : isExecuting
+                            ? "Executing..."
+                            : "Thinking..."}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
+                  )}
+                </div>
+              </ScrollArea>
 
-            {/* Input Section */}
-            <div className="space-y-3">
-              {/* Main Input Row */}
-              <div className="flex gap-2">
-                <input
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder={
-                    conversationMode
-                      ? "Ask me anything..."
-                      : sessionActive && currentUrl
-                      ? `Continue working on ${new URL(currentUrl).hostname}...`
-                      : "Describe the web action you want to automate..."
-                  }
-                  className="flex-1 bg-black/40 border border-blue-800 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-400"
-                  disabled={isLoading || isExecuting || isAgentRunning}
-                />
-
-                {speechMode && (
-                  <Button
-                    onClick={isRecording ? stopRecording : startRecording}
+              {/* Input Section */}
+              <div className="space-y-3">
+                {/* Main Input Row */}
+                <div className="flex gap-2">
+                  <input
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder={
+                      conversationMode
+                        ? "Ask me anything..."
+                        : sessionActive && currentUrl
+                        ? `Continue working on ${
+                            new URL(currentUrl).hostname
+                          }...`
+                        : "Describe the web action you want to automate..."
+                    }
+                    className="flex-1 bg-black/40 border border-blue-800 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-400"
                     disabled={isLoading || isExecuting || isAgentRunning}
-                    className={`px-4 py-3 ${
-                      isRecording
-                        ? "bg-red-600 hover:bg-red-700 animate-pulse"
-                        : "bg-purple-600 hover:bg-purple-700"
-                    }`}
+                  />
+
+                  {speechMode && (
+                    <Button
+                      onClick={isRecording ? stopRecording : startRecording}
+                      disabled={isLoading || isExecuting || isAgentRunning}
+                      className={`px-4 py-3 ${
+                        isRecording
+                          ? "bg-red-600 hover:bg-red-700 animate-pulse"
+                          : "bg-purple-600 hover:bg-purple-700"
+                      }`}
+                    >
+                      {isRecording ? (
+                        <MicOff className="h-4 w-4" />
+                      ) : (
+                        <Mic className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
+
+                  <Button
+                    onClick={sendMessage}
+                    disabled={
+                      isLoading ||
+                      !inputMessage.trim() ||
+                      isExecuting ||
+                      isAgentRunning
+                    }
+                    className="bg-blue-600 hover:bg-blue-700 px-6 py-3"
                   >
-                    {isRecording ? (
-                      <MicOff className="h-4 w-4" />
+                    {isLoading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                     ) : (
-                      <Mic className="h-4 w-4" />
+                      "Send"
                     )}
                   </Button>
-                )}
-
-                <Button
-                  onClick={sendMessage}
-                  disabled={
-                    isLoading ||
-                    !inputMessage.trim() ||
-                    isExecuting ||
-                    isAgentRunning
-                  }
-                  className="bg-blue-600 hover:bg-blue-700 px-6 py-3"
-                >
-                  {isLoading ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  ) : (
-                    "Send"
-                  )}
-                </Button>
-              </div>
-
-              {/* Action Buttons Row */}
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  onClick={executeCommand}
-                  disabled={
-                    isExecuting ||
-                    !inputMessage.trim() ||
-                    isLoading ||
-                    isAgentRunning
-                  }
-                  className="bg-green-600 hover:bg-green-700 text-sm py-3"
-                >
-                  {isExecuting ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  ) : (
-                    <Play className="mr-2 h-4 w-4" />
-                  )}
-                  {sessionActive ? "Continue Action" : "🤘 Run Stagehand"}
-                </Button>
-
-                <Button
-                  onClick={runAgent}
-                  disabled={
-                    isAgentRunning ||
-                    !inputMessage.trim() ||
-                    isLoading ||
-                    isExecuting
-                  }
-                  className="bg-purple-600 hover:bg-purple-700 text-sm py-3"
-                >
-                  {isAgentRunning ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  ) : (
-                    <Bot className="mr-2 h-4 w-4" />
-                  )}
-                  Agent Execution
-                </Button>
-              </div>
-
-              {/* Quick Actions for Active Sessions */}
-              {sessionActive && currentUrl && (
-                <div className="bg-gray-900/30 border border-gray-700 rounded-lg p-3">
-                  <p className="text-xs text-gray-400 mb-2 font-medium">
-                    Quick Actions for {new URL(currentUrl).hostname}:
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    <Button
-                      onClick={() => {
-                        setInputMessage(
-                          "extract all text content from this page"
-                        );
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
-                      disabled={isExecuting || isAgentRunning || isLoading}
-                    >
-                      Extract Text
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setInputMessage("extract all links from this page");
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
-                      disabled={isExecuting || isAgentRunning || isLoading}
-                    >
-                      Extract Links
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setInputMessage(
-                          "observe what actions can be performed on this page"
-                        );
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
-                      disabled={isExecuting || isAgentRunning || isLoading}
-                    >
-                      Observe
-                    </Button>
-                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* Hidden audio element for speech playback */}
-            <audio ref={audioRef} style={{ display: "none" }} />
-          </CardContent>
-        </Card>
-      </div>
+                {/* Action Buttons Row */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={executeCommand}
+                    disabled={
+                      isExecuting ||
+                      !inputMessage.trim() ||
+                      isLoading ||
+                      isAgentRunning
+                    }
+                    className="bg-green-600 hover:bg-green-700 text-sm py-3"
+                  >
+                    {isExecuting ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    ) : (
+                      <Play className="mr-2 h-4 w-4" />
+                    )}
+                    {sessionActive ? "Continue Action" : "🤘 Run Stagehand"}
+                  </Button>
+
+                  <Button
+                    onClick={runAgent}
+                    disabled={
+                      isAgentRunning ||
+                      !inputMessage.trim() ||
+                      isLoading ||
+                      isExecuting
+                    }
+                    className="bg-purple-600 hover:bg-purple-700 text-sm py-3"
+                  >
+                    {isAgentRunning ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    ) : (
+                      <Bot className="mr-2 h-4 w-4" />
+                    )}
+                    Agent Execution
+                  </Button>
+                </div>
+
+                {/* Quick Actions for Active Sessions */}
+                {sessionActive && currentUrl && (
+                  <div className="bg-gray-900/30 border border-gray-700 rounded-lg p-3">
+                    <p className="text-xs text-gray-400 mb-2 font-medium">
+                      Quick Actions for {new URL(currentUrl).hostname}:
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Button
+                        onClick={() => {
+                          setInputMessage(
+                            "extract all text content from this page"
+                          );
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
+                        disabled={isExecuting || isAgentRunning || isLoading}
+                      >
+                        Extract Text
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setInputMessage("extract all links from this page");
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
+                        disabled={isExecuting || isAgentRunning || isLoading}
+                      >
+                        Extract Links
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setInputMessage(
+                            "observe what actions can be performed on this page"
+                          );
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="border-cyan-600 text-cyan-400 hover:bg-cyan-900/50 text-xs py-2"
+                        disabled={isExecuting || isAgentRunning || isLoading}
+                      >
+                        Observe
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Hidden audio element for speech playback */}
+              <audio ref={audioRef} style={{ display: "none" }} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Browser Live View Section */}
       <div className="flex-1 flex flex-col">
@@ -1258,6 +1347,21 @@ export default function BrowserAgentUI() {
             >
               <PanelRight className="mr-2 h-4 w-4" />
               {showBrowser ? "Hide" : "Show"} Browser
+            </Button>
+
+            <Button
+              variant="outline"
+              className={`border-blue-600 hover:bg-blue-900 ${
+                showChat ? "text-blue-300 bg-blue-900/50" : "text-blue-400"
+              }`}
+              onClick={() => {
+                const newState = !showChat;
+                setShowChat(newState);
+                addLog(`Chat panel ${newState ? "opened" : "closed"}`);
+              }}
+            >
+              <MessageSquare className="mr-2 h-4 w-4" />
+              {showChat ? "Hide" : "Show"} Chat
             </Button>
 
             <Button
@@ -1317,6 +1421,12 @@ export default function BrowserAgentUI() {
                 {logs.length > 0 && (
                   <p className="text-xs text-blue-400 mt-2">
                     {logs.length} log entries tracked in the logs panel
+                  </p>
+                )}
+                {!showChat && (
+                  <p className="text-xs text-purple-400 mt-1">
+                    Chat panel is hidden - use &quot;Show Chat&quot; to access
+                    controls
                   </p>
                 )}
               </div>

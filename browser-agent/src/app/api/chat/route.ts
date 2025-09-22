@@ -58,6 +58,9 @@ export async function POST(request: NextRequest) {
           .join("\n") + "\n";
     }
 
+    let rawResponse = "";
+    let responseType = "";
+
     if (conversationMode) {
       // Handle as a regular conversation
       const prompt =
@@ -67,12 +70,8 @@ export async function POST(request: NextRequest) {
       // Generate response
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      const text = response.text();
-
-      return NextResponse.json({
-        message: text,
-        success: true,
-      });
+      rawResponse = response.text();
+      responseType = "conversation";
     } else {
       // Default mode: Always generate Stagehand automation steps
       const stagehandResponse = await generateStagehandSteps(
@@ -84,23 +83,54 @@ export async function POST(request: NextRequest) {
       try {
         // Try to parse as JSON first
         const automationSteps = JSON.parse(stagehandResponse);
-
-        return NextResponse.json({
-          message: `\`\`\`json\n${JSON.stringify(
-            automationSteps,
-            null,
-            2
-          )}\n\`\`\``,
-          success: true,
+        rawResponse = `Automation Steps:\n${JSON.stringify(
           automationSteps,
-        });
+          null,
+          2
+        )}`;
       } catch {
-        // If JSON parsing fails, return the raw response
+        // If JSON parsing fails, use the raw response
+        rawResponse = `Automation Response:\n${stagehandResponse}`;
+      }
+      responseType = "automation";
+    }
+
+    // Format the response using the same endpoint used by agent and stagehand
+    try {
+      const formatResponse = await fetch(
+        `${request.nextUrl.origin}/api/format`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agentResponse: rawResponse,
+            task: message,
+            responseType: responseType,
+          }),
+        }
+      );
+
+      const formatData = await formatResponse.json();
+
+      if (formatData.success && formatData.formattedResponse) {
         return NextResponse.json({
-          message: `\`\`\`json\n${stagehandResponse}\n\`\`\``,
+          message: formatData.formattedResponse,
+          success: true,
+        });
+      } else {
+        // Fallback to original response if formatting fails
+        return NextResponse.json({
+          message: rawResponse,
           success: true,
         });
       }
+    } catch (formatError) {
+      console.error("Error formatting response:", formatError);
+      // Fallback to original response
+      return NextResponse.json({
+        message: rawResponse,
+        success: true,
+      });
     }
   } catch (error) {
     console.error("Error calling Gemini API:", error);
