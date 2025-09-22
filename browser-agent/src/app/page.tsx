@@ -62,9 +62,11 @@ export default function BrowserAgentUI() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   // Persistent session and data management
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [extractedData, setExtractedData] = useState<ExtractedDataItem[]>([]);
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
   const [sessionActive, setSessionActive] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [lastAction, setLastAction] = useState<string | null>(null);
 
   // Speech mode state
@@ -93,6 +95,7 @@ export default function BrowserAgentUI() {
     addLog(`New data extracted: ${type}`);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const sortExtractedData = (sortBy: "timestamp" | "type" | "content") => {
     setExtractedData((prev) => {
       const sorted = [...prev].sort((a, b) => {
@@ -112,6 +115,7 @@ export default function BrowserAgentUI() {
     });
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const clearExtractedData = () => {
     setExtractedData([]);
     addLog("Extracted data cleared");
@@ -230,7 +234,7 @@ export default function BrowserAgentUI() {
         addLog(`Playing ${data.segments.length} audio segments sequentially`);
 
         // Check if we have valid audio data
-        const validSegments = data.segments.filter((seg: any) => seg.audio);
+        const validSegments = data.segments.filter((seg: { audio?: string }) => seg.audio);
         if (validSegments.length === 0) {
           addLog("No valid audio segments found in response");
           return;
