@@ -67,6 +67,59 @@ async function main(stagehand: Stagehand, command: string) {
  * Initialize and run the main() function
  */
 export async function runStagehand(command: string, sessionId?: string) {
+  // Create an array to capture logs
+  const agentLogs: string[] = [];
+
+  // Custom logger function to capture Stagehand logs
+  const customLogger = (...args: unknown[]) => {
+    const logMessage = args
+      .map((arg) =>
+        typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)
+      )
+      .join(" ");
+
+    // Enhanced filtering for more detailed browser action logs
+    if (
+      logMessage.includes("agent") ||
+      logMessage.includes("click") ||
+      logMessage.includes("navigate") ||
+      logMessage.includes("type") ||
+      logMessage.includes("extract") ||
+      logMessage.includes("goto") ||
+      logMessage.includes("action") ||
+      logMessage.includes("step") ||
+      logMessage.includes("scroll") ||
+      logMessage.includes("wait") ||
+      logMessage.includes("find") ||
+      logMessage.includes("locate") ||
+      logMessage.includes("element") ||
+      logMessage.includes("page") ||
+      logMessage.includes("button") ||
+      logMessage.includes("input") ||
+      logMessage.includes("form") ||
+      logMessage.includes("link") ||
+      logMessage.toLowerCase().includes("performing") ||
+      logMessage.toLowerCase().includes("executing") ||
+      logMessage.toLowerCase().includes("visiting") ||
+      logMessage.toLowerCase().includes("searching") ||
+      logMessage.toLowerCase().includes("clicking") ||
+      logMessage.toLowerCase().includes("typing") ||
+      logMessage.toLowerCase().includes("scrolling") ||
+      logMessage.toLowerCase().includes("loading") ||
+      logMessage.toLowerCase().includes("found") ||
+      logMessage.toLowerCase().includes("attempting") ||
+      logMessage.toLowerCase().includes("interacting")
+    ) {
+      // Add timestamp and action type prefix for better organization
+      const timestamp = new Date().toLocaleTimeString();
+      const enhancedLog = `[${timestamp}] 🤖 Agent: ${logMessage}`;
+      agentLogs.push(enhancedLog);
+    }
+
+    // Still log to console for debugging
+    console.log(...args);
+  };
+
   const stagehand = new Stagehand({
     env: "BROWSERBASE",
     apiKey: process.env.BROWSERBASE_API_KEY,
@@ -75,8 +128,8 @@ export async function runStagehand(command: string, sessionId?: string) {
       apiKey: process.env.Gemini_API_KEY,
     },
     modelName: "google/gemini-2.5-flash",
-    verbose: 1,
-    logger: console.log,
+    verbose: 2, // Increased verbosity for more detailed logs
+    logger: customLogger,
     browserbaseSessionID: sessionId,
     disablePino: true,
   });
@@ -86,7 +139,7 @@ export async function runStagehand(command: string, sessionId?: string) {
     // Wait longer for the agent to complete all steps
     const result = await Promise.race([
       main(stagehand, command),
-      new Promise((_, reject) =>
+      new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error("Agent timeout after 2 minutes")),
           120000
@@ -97,7 +150,11 @@ export async function runStagehand(command: string, sessionId?: string) {
     // Agent has completed - now it's safe to close
     console.log("Agent execution completed, closing session...");
 
-    return result;
+    // Return result with captured logs
+    return {
+      ...result,
+      logs: agentLogs,
+    };
   } catch (error) {
     console.error("Error in runStagehand:", error);
     try {

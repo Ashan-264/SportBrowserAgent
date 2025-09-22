@@ -40,7 +40,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, result: formattedResult });
+    return NextResponse.json({
+      success: true,
+      result: formattedResult,
+      logs: result.logs || [], // Include the captured agent logs
+    });
   } catch (error) {
     return NextResponse.json({ success: false, error: String(error) });
   }
