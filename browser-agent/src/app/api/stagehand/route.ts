@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
       data: result.data,
       currentUrl: result.currentUrl,
       persistSession: persistSession,
+      logs: result.logs || [], // Include the captured browser action logs
     });
   } catch (error) {
     console.error("Error in stagehand route:", error);

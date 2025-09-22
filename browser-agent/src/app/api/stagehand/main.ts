@@ -73,15 +73,25 @@ For "get all the trail names": {"command": "extract", "instruction": "extract al
  */
 async function executeStagehandAction(
   stagehand: Stagehand,
-  action: { command: string; url?: string; instruction: string }
+  action: { command: string; url?: string; instruction: string },
+  stagehandLogs: string[]
 ) {
   const { page } = stagehand;
+  const timestamp = new Date().toLocaleTimeString();
 
   try {
+    stagehandLogs.push(
+      `[${timestamp}] ⚡ Starting ${action.command}: ${action.instruction}`
+    );
+
     switch (action.command) {
       case "goto":
         if (!action.url) throw new Error("URL required for goto command");
+        stagehandLogs.push(`[${timestamp}] 🌐 Navigating to: ${action.url}`);
         await page.goto(action.url);
+        stagehandLogs.push(
+          `[${timestamp}] ✅ Navigation completed to: ${action.url}`
+        );
         return {
           success: true,
           action: "goto",
@@ -90,9 +100,17 @@ async function executeStagehandAction(
         };
 
       case "observe":
+        stagehandLogs.push(
+          `[${timestamp}] 👁️ Observing page: ${action.instruction}`
+        );
         const observeResult = await page.observe({
           instruction: action.instruction,
         });
+        stagehandLogs.push(
+          `[${timestamp}] ✅ Observation completed: Found ${
+            Array.isArray(observeResult) ? observeResult.length : "unknown"
+          } elements`
+        );
         return {
           success: true,
           action: "observe",
@@ -101,9 +119,13 @@ async function executeStagehandAction(
         };
 
       case "act":
-        const actResult = await page.act({
-          instruction: action.instruction,
-        });
+        stagehandLogs.push(
+          `[${timestamp}] 🖱️ Performing action: ${action.instruction}`
+        );
+        const actResult = await page.act(action.instruction);
+        stagehandLogs.push(
+          `[${timestamp}] ✅ Action completed: ${action.instruction}`
+        );
         return {
           success: true,
           action: "act",
@@ -112,9 +134,13 @@ async function executeStagehandAction(
         };
 
       case "extract":
+        stagehandLogs.push(
+          `[${timestamp}] 📊 Extracting data: ${action.instruction}`
+        );
         const extractResult = await page.extract({
           instruction: action.instruction,
         });
+        stagehandLogs.push(`[${timestamp}] ✅ Data extraction completed`);
         return {
           success: true,
           action: "extract",
@@ -127,11 +153,18 @@ async function executeStagehandAction(
     }
   } catch (error) {
     console.error(`Error executing ${action.command}:`, error);
+    stagehandLogs.push(
+      `[${timestamp}] ❌ Failed ${action.command}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
     return {
       success: false,
       action: action.command,
-      result: `Failed to execute ${action.command}: ${error.message}`,
-      data: { error: error.message },
+      result: `Failed to execute ${action.command}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      data: { error: error instanceof Error ? error.message : String(error) },
     };
   }
 }
@@ -139,7 +172,11 @@ async function executeStagehandAction(
 /**
  * Main function that processes user commands through Gemini
  */
-async function main(stagehand: Stagehand, userCommand: string) {
+async function main(
+  stagehand: Stagehand,
+  userCommand: string,
+  stagehandLogs: string[]
+) {
   const { page } = stagehand;
 
   try {
@@ -151,12 +188,26 @@ async function main(stagehand: Stagehand, userCommand: string) {
       currentUrl = undefined;
     }
 
+    // Log the decision process
+    const timestamp = new Date().toLocaleTimeString();
+    stagehandLogs.push(`[${timestamp}] 🧠 Analyzing command: "${userCommand}"`);
+    if (currentUrl) {
+      stagehandLogs.push(`[${timestamp}] 📍 Current URL: ${currentUrl}`);
+    }
+
     // Get action decision from Gemini
     const actionDecision = await getActionFromGemini(userCommand, currentUrl);
     console.log("Gemini decided action:", actionDecision);
+    stagehandLogs.push(
+      `[${timestamp}] 🎯 Action decided: ${actionDecision.command} - ${actionDecision.instruction}`
+    );
 
     // Execute the decided action
-    const result = await executeStagehandAction(stagehand, actionDecision);
+    const result = await executeStagehandAction(
+      stagehand,
+      actionDecision,
+      stagehandLogs
+    );
 
     return {
       success: result.success,
@@ -167,10 +218,18 @@ async function main(stagehand: Stagehand, userCommand: string) {
     };
   } catch (error) {
     console.error("Error in main:", error);
+    const timestamp = new Date().toLocaleTimeString();
+    stagehandLogs.push(
+      `[${timestamp}] ❌ Error in main: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
     return {
       success: false,
-      message: `Error processing command: ${error.message}`,
-      data: { error: error.message },
+      message: `Error processing command: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      data: { error: error instanceof Error ? error.message : String(error) },
     };
   }
 }
@@ -206,6 +265,62 @@ export async function runStagehand(
   sessionId?: string,
   closeSession = false // Default to false to keep sessions persistent
 ) {
+  // Create an array to capture detailed Stagehand logs
+  const stagehandLogs: string[] = [];
+
+  // Enhanced custom logger for detailed browser action tracking
+  const customStagehandLogger = (...args: unknown[]) => {
+    const logMessage = args
+      .map((arg) =>
+        typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)
+      )
+      .join(" ");
+
+    // Enhanced filtering for comprehensive browser action logging
+    if (
+      logMessage.includes("click") ||
+      logMessage.includes("navigate") ||
+      logMessage.includes("type") ||
+      logMessage.includes("extract") ||
+      logMessage.includes("goto") ||
+      logMessage.includes("action") ||
+      logMessage.includes("step") ||
+      logMessage.includes("scroll") ||
+      logMessage.includes("wait") ||
+      logMessage.includes("find") ||
+      logMessage.includes("locate") ||
+      logMessage.includes("element") ||
+      logMessage.includes("page") ||
+      logMessage.includes("button") ||
+      logMessage.includes("input") ||
+      logMessage.includes("form") ||
+      logMessage.includes("link") ||
+      logMessage.includes("observe") ||
+      logMessage.includes("act") ||
+      logMessage.toLowerCase().includes("performing") ||
+      logMessage.toLowerCase().includes("executing") ||
+      logMessage.toLowerCase().includes("visiting") ||
+      logMessage.toLowerCase().includes("searching") ||
+      logMessage.toLowerCase().includes("clicking") ||
+      logMessage.toLowerCase().includes("typing") ||
+      logMessage.toLowerCase().includes("scrolling") ||
+      logMessage.toLowerCase().includes("loading") ||
+      logMessage.toLowerCase().includes("found") ||
+      logMessage.toLowerCase().includes("attempting") ||
+      logMessage.toLowerCase().includes("interacting") ||
+      logMessage.toLowerCase().includes("analyzing") ||
+      logMessage.toLowerCase().includes("processing")
+    ) {
+      // Add timestamp and action type prefix
+      const timestamp = new Date().toLocaleTimeString();
+      const enhancedLog = `[${timestamp}] 🤘 Stagehand: ${logMessage}`;
+      stagehandLogs.push(enhancedLog);
+    }
+
+    // Still log to console for debugging
+    console.log(...args);
+  };
+
   const stagehand = new Stagehand({
     env: "BROWSERBASE",
     apiKey: process.env.BROWSERBASE_API_KEY,
@@ -214,29 +329,53 @@ export async function runStagehand(
       apiKey: process.env.Gemini_API_KEY,
     },
     modelName: "google/gemini-2.5-flash",
-    verbose: 1,
-    logger: console.log,
+    verbose: 2, // Increased verbosity for more detailed logs
+    logger: customStagehandLogger,
     browserbaseSessionID: sessionId,
     disablePino: true,
   });
 
   try {
     await stagehand.init();
-    const result = await main(stagehand, command);
+    stagehandLogs.push(
+      `[${new Date().toLocaleTimeString()}] 🚀 Stagehand initialized successfully`
+    );
+
+    const result = await main(stagehand, command, stagehandLogs);
 
     console.log("Stagehand action completed successfully!");
+    stagehandLogs.push(
+      `[${new Date().toLocaleTimeString()}] ✅ Stagehand action completed successfully`
+    );
 
     // Only close session if explicitly requested
     if (closeSession) {
       console.log("Closing session as requested...");
+      stagehandLogs.push(
+        `[${new Date().toLocaleTimeString()}] 🔒 Closing session as requested`
+      );
       await stagehand.close();
     } else {
       console.log("Keeping browser session alive for continued use...");
+      stagehandLogs.push(
+        `[${new Date().toLocaleTimeString()}] 🔄 Keeping session alive for continued use`
+      );
     }
 
-    return result;
+    return {
+      ...result,
+      logs: stagehandLogs, // Include captured logs
+    };
   } catch (error) {
     console.error("Error in runStagehand:", error);
+
+    // Add error to logs
+    const timestamp = new Date().toLocaleTimeString();
+    stagehandLogs.push(
+      `[${timestamp}] ❌ Stagehand Error: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
 
     // Only close on error if explicitly requested, otherwise keep session for debugging
     if (closeSession) {
@@ -244,9 +383,15 @@ export async function runStagehand(
         await stagehand.close();
       } catch (closeError) {
         console.error("Error closing stagehand:", closeError);
+        stagehandLogs.push(
+          `[${new Date().toLocaleTimeString()}] ❌ Session Close Error: ${closeError}`
+        );
       }
     } else {
       console.log("Keeping session alive despite error for debugging...");
+      stagehandLogs.push(
+        `[${new Date().toLocaleTimeString()}] 🔧 Session kept alive for debugging`
+      );
     }
 
     return {
@@ -255,6 +400,7 @@ export async function runStagehand(
         error instanceof Error ? error.message : String(error)
       }`,
       data: { error: error instanceof Error ? error.message : String(error) },
+      logs: stagehandLogs, // Include logs even on error
     };
   }
 }

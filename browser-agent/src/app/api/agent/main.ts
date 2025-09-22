@@ -78,7 +78,7 @@ export async function runStagehand(command: string, sessionId?: string) {
       )
       .join(" ");
 
-    // Filter out noisy logs and keep only relevant agent actions
+    // Enhanced filtering for more detailed browser action logs
     if (
       logMessage.includes("agent") ||
       logMessage.includes("click") ||
@@ -88,12 +88,32 @@ export async function runStagehand(command: string, sessionId?: string) {
       logMessage.includes("goto") ||
       logMessage.includes("action") ||
       logMessage.includes("step") ||
+      logMessage.includes("scroll") ||
+      logMessage.includes("wait") ||
+      logMessage.includes("find") ||
+      logMessage.includes("locate") ||
+      logMessage.includes("element") ||
+      logMessage.includes("page") ||
+      logMessage.includes("button") ||
+      logMessage.includes("input") ||
+      logMessage.includes("form") ||
+      logMessage.includes("link") ||
       logMessage.toLowerCase().includes("performing") ||
       logMessage.toLowerCase().includes("executing") ||
       logMessage.toLowerCase().includes("visiting") ||
-      logMessage.toLowerCase().includes("searching")
+      logMessage.toLowerCase().includes("searching") ||
+      logMessage.toLowerCase().includes("clicking") ||
+      logMessage.toLowerCase().includes("typing") ||
+      logMessage.toLowerCase().includes("scrolling") ||
+      logMessage.toLowerCase().includes("loading") ||
+      logMessage.toLowerCase().includes("found") ||
+      logMessage.toLowerCase().includes("attempting") ||
+      logMessage.toLowerCase().includes("interacting")
     ) {
-      agentLogs.push(logMessage);
+      // Add timestamp and action type prefix for better organization
+      const timestamp = new Date().toLocaleTimeString();
+      const enhancedLog = `[${timestamp}] 🤖 Agent: ${logMessage}`;
+      agentLogs.push(enhancedLog);
     }
 
     // Still log to console for debugging

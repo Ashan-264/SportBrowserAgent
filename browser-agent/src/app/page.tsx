@@ -668,6 +668,20 @@ export default function BrowserAgentUI() {
 
       const data = await response.json();
 
+      // Debug: Log the received data to console
+      console.log("Stagehand API Response:", data);
+
+      // Display real-time browser action logs from Stagehand
+      if (data.logs && data.logs.length > 0) {
+        console.log("Received Stagehand logs:", data.logs);
+        data.logs.forEach((log: string) => {
+          addStagehandLog("Real-time browser action", log);
+        });
+      } else {
+        console.log("No logs received from Stagehand API");
+        addStagehandLog("Debug", "No detailed logs received from Stagehand");
+      }
+
       if (data.action) {
         addStagehandLog(
           `Action decided: ${data.action.command}`,
@@ -802,36 +816,83 @@ export default function BrowserAgentUI() {
 
       const data = await response.json();
 
+      // Debug: Log the received agent data to console
+      console.log("Agent API Response:", data);
+
       let resultContent = "";
       if (data.success) {
         // Prepare raw response for formatting
         let rawResponse = `🤖 Agent Execution Complete\n\nTask: ${command}\n\n`;
 
         if (data.logs && data.logs.length > 0) {
+          console.log("Received Agent logs:", data.logs);
           rawResponse += `Logs:\n${data.logs
             .map((log: string) => `• ${log}`)
             .join("\n")}\n\n`;
 
-          // Add agent logs to our log system with enhanced display
+          // Add agent logs to our log system with enhanced display and categorization
           data.logs.forEach((log: string) => {
-            // Check if this is a browsing action log
+            // Enhanced categorization for different types of browser actions
             if (
-              log.includes("click") ||
-              log.includes("navigate") ||
-              log.includes("type") ||
-              log.includes("extract") ||
-              log.includes("goto") ||
-              log.includes("action") ||
-              log.toLowerCase().includes("performing") ||
-              log.toLowerCase().includes("executing") ||
-              log.toLowerCase().includes("visiting") ||
+              log.toLowerCase().includes("click") ||
+              log.toLowerCase().includes("clicking")
+            ) {
+              addStagehandLog("🖱️ Agent clicking", log);
+            } else if (
+              log.toLowerCase().includes("navigate") ||
+              log.toLowerCase().includes("goto") ||
+              log.toLowerCase().includes("visiting")
+            ) {
+              addStagehandLog("🌐 Agent navigating", log);
+            } else if (
+              log.toLowerCase().includes("type") ||
+              log.toLowerCase().includes("typing") ||
+              log.toLowerCase().includes("input")
+            ) {
+              addStagehandLog("⌨️ Agent typing", log);
+            } else if (
+              log.toLowerCase().includes("extract") ||
+              log.toLowerCase().includes("extracting")
+            ) {
+              addStagehandLog("📊 Agent extracting", log);
+            } else if (
+              log.toLowerCase().includes("scroll") ||
+              log.toLowerCase().includes("scrolling")
+            ) {
+              addStagehandLog("📜 Agent scrolling", log);
+            } else if (
+              log.toLowerCase().includes("wait") ||
+              log.toLowerCase().includes("waiting") ||
+              log.toLowerCase().includes("loading")
+            ) {
+              addStagehandLog("⏳ Agent waiting", log);
+            } else if (
+              log.toLowerCase().includes("find") ||
+              log.toLowerCase().includes("locate") ||
+              log.toLowerCase().includes("found") ||
               log.toLowerCase().includes("searching")
             ) {
-              addStagehandLog("🌐 Agent browsing", log);
+              addStagehandLog("🔍 Agent searching", log);
+            } else if (
+              log.toLowerCase().includes("analyzing") ||
+              log.toLowerCase().includes("observing") ||
+              log.toLowerCase().includes("processing")
+            ) {
+              addStagehandLog("🧠 Agent analyzing", log);
+            } else if (
+              log.toLowerCase().includes("performing") ||
+              log.toLowerCase().includes("executing") ||
+              log.toLowerCase().includes("action") ||
+              log.toLowerCase().includes("interacting")
+            ) {
+              addStagehandLog("⚡ Agent action", log);
             } else {
-              addStagehandLog("Agent step", log);
+              addStagehandLog("🤖 Agent step", log);
             }
           });
+        } else {
+          console.log("No logs received from Agent API");
+          addStagehandLog("Debug", "No detailed logs received from Agent");
         }
 
         if (data.result) {
