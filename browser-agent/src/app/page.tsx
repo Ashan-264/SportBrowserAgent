@@ -234,7 +234,9 @@ export default function BrowserAgentUI() {
         addLog(`Playing ${data.segments.length} audio segments sequentially`);
 
         // Check if we have valid audio data
-        const validSegments = data.segments.filter((seg: { audio?: string }) => seg.audio);
+        const validSegments = data.segments.filter(
+          (seg: { audio?: string }) => seg.audio
+        );
         if (validSegments.length === 0) {
           addLog("No valid audio segments found in response");
           return;
