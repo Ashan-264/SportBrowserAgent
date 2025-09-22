@@ -4,7 +4,6 @@
 "use server";
 
 import { Stagehand } from "@browserbasehq/stagehand";
-import { z } from "zod/v3";
 import { Browserbase } from "@browserbasehq/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
