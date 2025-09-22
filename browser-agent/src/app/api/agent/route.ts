@@ -3,7 +3,8 @@ import { runStagehand, startBBSSession } from "./main";
 
 export async function POST(request: NextRequest) {
   try {
-    let { sessionId, command } = await request.json();
+    const { sessionId: initialSessionId, command } = await request.json();
+    let sessionId = initialSessionId;
 
     if (!sessionId) {
       // Start a new Browserbase session if none provided

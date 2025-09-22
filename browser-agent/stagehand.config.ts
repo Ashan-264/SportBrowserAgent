@@ -7,7 +7,8 @@ const StagehandConfig: ConstructorParams = {
   env: "BROWSERBASE",
   apiKey: process.env.BROWSERBASE_API_KEY /* API key for authentication */,
   projectId: process.env.BROWSERBASE_PROJECT_ID /* Project identifier */,
-  debugDom: true /* Enable DOM debugging features */,
+  verbose: 1 /* Enable verbose logging for debugging */,
+  env: "BROWSERBASE" as "BROWSERBASE" /* Specify Browserbase environment */,
   headless: false /* Run browser in headless mode */,
   logger: (message: LogLine) =>
     console.log(logLineToString(message)) /* Custom logging function */,

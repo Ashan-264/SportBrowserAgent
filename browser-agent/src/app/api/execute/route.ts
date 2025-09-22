@@ -12,7 +12,7 @@
  * 4. Use Playwright to click the first link. If it fails, use `act` to gracefully fallback to Stagehand AI.
  */
 
-import { Page, BrowserContext, Stagehand } from "@browserbasehq/stagehand";
+import { Page, Stagehand } from "@browserbasehq/stagehand";
 import { z } from "zod";
 import { NextRequest, NextResponse } from "next/server";
 
