@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import jsPDF from "jspdf";
+import { analyticsEvents } from "@/lib/analytics";
 
 interface Message {
   role: "user" | "assistant";
@@ -139,6 +140,7 @@ export default function BrowserAgentUI() {
   const startRecording = async () => {
     try {
       addLog("Starting microphone recording");
+      analyticsEvents.speechRecording();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
@@ -161,6 +163,7 @@ export default function BrowserAgentUI() {
     } catch (error) {
       console.error("Error starting recording:", error);
       addLog(`Recording error: ${error}`);
+      analyticsEvents.errorOccurred("speech", String(error), "startRecording");
     }
   };
 
@@ -546,6 +549,7 @@ export default function BrowserAgentUI() {
     if (!inputMessage.trim() || isLoading) return;
 
     addLog("Sending message to Gemini");
+    analyticsEvents.chatMessage("user", inputMessage.length);
 
     const userMessage: Message = {
       role: "user",
@@ -577,6 +581,7 @@ export default function BrowserAgentUI() {
 
       setMessages((prev) => [...prev, assistantMessage]);
       addLog("Received response from Gemini");
+      analyticsEvents.chatMessage("assistant", assistantMessage.content.length);
 
       // Synthesize speech for assistant response if speech mode is enabled
       if (speechMode && assistantMessage.content) {
@@ -585,6 +590,7 @@ export default function BrowserAgentUI() {
     } catch (error) {
       console.error("Error sending message:", error);
       addLog(`Chat error: ${error}`);
+      analyticsEvents.errorOccurred("chat", String(error), "sendMessage");
       const errorMessage: Message = {
         role: "assistant",
         content: "Sorry, there was an error processing your request.",
@@ -631,6 +637,7 @@ export default function BrowserAgentUI() {
 
     setIsExecuting(true);
     addStagehandLog("Starting browser automation", inputMessage);
+    analyticsEvents.stagehandAction("command_started", inputMessage);
 
     const userMessage: Message = {
       role: "user",
@@ -650,6 +657,7 @@ export default function BrowserAgentUI() {
       // Only create new session if none exists
       if (!sessionId || !sessionActive) {
         addStagehandLog("Initializing new browser session");
+        analyticsEvents.sessionCreated("stagehand");
         const session = await startBBSSession();
         sessionId = session.sessionId;
         debugUrl = session.debugUrl;
